@@ -25,7 +25,7 @@ class LearnLiveClient:
         self.running = False
         self.message_callback = None
         
-    def connect(self, host: str = SERVER_HOST, port: int = SERVER_PORT) -> dict:
+    def connect(self, host: str = '127.0.0.1', port: int = SERVER_PORT) -> dict:
         """
         Connect to the LearnLive server.
         

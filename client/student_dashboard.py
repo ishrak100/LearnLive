@@ -7,39 +7,44 @@ import sys
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from client.client import LearnLiveClient
+from client.utility import LearnLiveClient
 
+DARK_BG = "#1e1e1e"
+DARKER_BG = "#181818"
+CARD_BG = "#2a2a2a"
+CANVAS_BG = "#1e1e1e"
 
 class StudentDashboard:
     """Student Dashboard - Google Classroom Style"""
     
+
     def __init__(self, client: LearnLiveClient, user_data: dict):
         self.client = client
         self.user_data = user_data
+
         self.window = None
         self.classes = []
         self.selected_class = None
         self.current_view = "home"
+
         self.sidebar = None
         self.content_frame = None
-        self.home_btn = None
         self.classes_frame = None
-        self.notification_history = []  # Store notification history
+        self.home_btn = None
+
         self.search_query = ""
         self.announcements = []
-        self.announcements_cache = {}  # Cache announcements by class_id to reduce queries
-        self.last_refresh_time = {}  # Track last refresh time per class
-        self.pending_refresh = {}  # Debounce refresh requests per class
-        self.materials = []  # Track class materials
-        self.materials_container = None  # Reference to materials display container
-        self.assignments = []  # Track class assignments
-        self.assignments_container = None  # Reference to assignments display container
-        self.pending_submission_request = None  # Track pending submission requests
-        
+        self.materials = []
+        self.assignments = []
+
+        self.assignments_container = None
+        self.materials_container = None
+
+        self.notification_history = []
+
         self.client.set_message_callback(self._handle_server_message)
-        
-        # Load notifications from database
-        self.client.get_notifications(user_data['user_id'])
+        self.client.get_notifications(user_data["user_id"])
+
     
     def show(self):
         """Show dashboard"""
@@ -90,7 +95,7 @@ class StudentDashboard:
         ttk.Label(
             logo_frame,
             text="🎓 LearnLive",
-            font=("Arial", 20, "bold"),
+            font=("Arial", 18, "bold"),
             bootstyle="inverse-light"
         ).pack(anchor=W)
         
@@ -111,7 +116,7 @@ class StudentDashboard:
             nav_frame, 
             text="✓  To-Do", 
             command=self._show_todo_page,
-            bootstyle="dark", 
+            bootstyle="secondary", 
             width=25
         ).pack(fill=X, pady=2)
         
@@ -119,7 +124,7 @@ class StudentDashboard:
             nav_frame, 
             text="🔔  Notifications", 
             command=self._show_email_notification_page,
-            bootstyle="dark", 
+            bootstyle="secondary", 
             width=25
         ).pack(fill=X, pady=2)
         

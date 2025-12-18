@@ -10,7 +10,7 @@ import sys
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from client.client import LearnLiveClient
+from client.utility import LearnLiveClient
 from client.login_gui import LoginWindow
 from client.teacher_dashboard import TeacherDashboard
 from client.student_dashboard import StudentDashboard

@@ -7,7 +7,7 @@ import sys
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from client.client import LearnLiveClient
+from client.utility import LearnLiveClient
 
 
 class TeacherDashboard:
@@ -87,7 +87,7 @@ class TeacherDashboard:
         ttk.Label(
             logo_frame,
             text="🎓 LearnLive",
-            font=("Arial", 20, "bold"),
+            font=("Arial", 18, "bold"),
             bootstyle="inverse-light"
         ).pack(anchor=W)
         
@@ -104,7 +104,7 @@ class TeacherDashboard:
         )
         self.home_btn.pack(fill=X, pady=2)
         
-        ttk.Button(nav_frame, text="✓  To-Get", command=self._show_toget_page, bootstyle="dark", width=25).pack(fill=X, pady=2)
+        ttk.Button(nav_frame, text="✓  To-Get", command=self._show_toget_page, bootstyle="secondary", width=25).pack(fill=X, pady=2)
         
         ttk.Separator(sidebar, orient=HORIZONTAL).pack(fill=X, pady=10)
         
@@ -112,22 +112,21 @@ class TeacherDashboard:
         ttk.Label(
             sidebar,
             text="Created Classes",
-            font=("Arial", 11, "bold"),
-            bootstyle="inverse-secondary"
+            font=("Arial", 10, "bold"),
         ).pack(anchor=W, padx=20, pady=(10, 5))
         
-        self.classes_frame = ttk.Frame(sidebar, style="dark")
+        self.classes_frame = ttk.Frame(sidebar)
         self.classes_frame.pack(fill=BOTH, expand=YES, padx=10)
         
         # Logout button at bottom
-        logout_frame = ttk.Frame(sidebar, style="dark")
+        logout_frame = ttk.Frame(sidebar)
         logout_frame.pack(side=BOTTOM, fill=X, padx=10, pady=20)
         
         ttk.Button(
             logout_frame,
             text="🚪  Log Out",
             command=self._logout,
-            bootstyle="danger",
+            bootstyle="danger-outline",
             width=25
         ).pack(fill=X)
         
@@ -142,8 +141,7 @@ class TeacherDashboard:
             ttk.Label(
                 self.classes_frame,
                 text="No classes yet",
-                font=("Arial", 10),
-                bootstyle="inverse-secondary"
+                font=("Arial", 9),
             ).pack(pady=10)
             return
         
@@ -153,20 +151,20 @@ class TeacherDashboard:
                 self.classes_frame,
                 text=cls.get("class_name", "Unknown"),
                 command=lambda c=cls: self._select_class(c),
-                bootstyle="dark",
+                bootstyle="light",
                 width=25
             )
             btn.pack(fill=X, pady=2)
     
     def _create_header(self, parent):
         """Create header"""
-        header = ttk.Frame(parent, bootstyle="dark")
+        header = ttk.Frame(parent, relief="raised", borderwidth=1)
         
         # Search
-        search_frame = ttk.Frame(header, bootstyle="dark")
+        search_frame = ttk.Frame(header)
         search_frame.pack(side=LEFT, fill=X, expand=YES, padx=20, pady=15)
         
-        self.search_entry = ttk.Entry(search_frame, font=("Arial", 12), width=50)
+        self.search_entry = ttk.Entry(search_frame, font=("Arial", 11), width=50)
         self.search_entry.insert(0, "🔍 Search classes...")
         self.search_entry.pack(side=LEFT, fill=X, expand=YES)
         
@@ -176,7 +174,7 @@ class TeacherDashboard:
         self.search_entry.bind("<KeyRelease>", self._on_search_change)
         
         # User
-        user_frame = ttk.Frame(header, bootstyle="dark")
+        user_frame = ttk.Frame(header)
         user_frame.pack(side=RIGHT, padx=20)
         
         ttk.Button(
