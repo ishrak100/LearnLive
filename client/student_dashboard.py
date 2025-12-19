@@ -8,47 +8,41 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from client.utility import LearnLiveClient
+from client.expand_gui import ExpandView
 
-DARK_BG = "#1e1e1e"
-DARKER_BG = "#181818"
-CARD_BG = "#2a2a2a"
-CANVAS_BG = "#1e1e1e"
 
 class StudentDashboard:
     """Student Dashboard - Google Classroom Style"""
     
-
     def __init__(self, client: LearnLiveClient, user_data: dict):
         self.client = client
         self.user_data = user_data
-
         self.window = None
         self.classes = []
         self.selected_class = None
         self.current_view = "home"
-
         self.sidebar = None
         self.content_frame = None
-        self.classes_frame = None
         self.home_btn = None
-
+        self.classes_frame = None
+        self.notification_history = []  # Store notification history
         self.search_query = ""
         self.announcements = []
-        self.materials = []
-        self.assignments = []
-
-        self.assignments_container = None
-        self.materials_container = None
-
-        self.notification_history = []
-
+        self.announcements_cache = {}  # Cache announcements by class_id to reduce queries
+        self.last_refresh_time = {}  # Track last refresh time per class
+        self.pending_refresh = {}  # Debounce refresh requests per class
+        self.materials = []  # Track class materials
+        self.materials_container = None  # Reference to materials display container
+        self.assignments = []  # Track class assignments
+        self.assignments_container = None  # Reference to assignments display container
+        self.pending_submission_request = None  # Track pending submission requests
+        self.current_expand_view = None  # Track current expanded view for comments
+        
         self.client.set_message_callback(self._handle_server_message)
-        self.client.get_notifications(user_data["user_id"])
-
     
     def show(self):
         """Show dashboard"""
-        self.window = ttk.Window(themename="darkly")
+        self.window = ttk.Window(themename="minty")
         self.window.title(f"LearnLive - {self.user_data.get('name', 'Student')}")
         self.window.geometry("1400x900")
         self.window.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -95,7 +89,7 @@ class StudentDashboard:
         ttk.Label(
             logo_frame,
             text="🎓 LearnLive",
-            font=("Arial", 18, "bold"),
+            font=("Arial", 20, "bold"),
             bootstyle="inverse-light"
         ).pack(anchor=W)
         
@@ -116,7 +110,7 @@ class StudentDashboard:
             nav_frame, 
             text="✓  To-Do", 
             command=self._show_todo_page,
-            bootstyle="secondary", 
+            bootstyle="dark", 
             width=25
         ).pack(fill=X, pady=2)
         
@@ -124,7 +118,7 @@ class StudentDashboard:
             nav_frame, 
             text="🔔  Notifications", 
             command=self._show_email_notification_page,
-            bootstyle="secondary", 
+            bootstyle="dark", 
             width=25
         ).pack(fill=X, pady=2)
         
@@ -184,7 +178,7 @@ class StudentDashboard:
                 text=f"📖  {cls.get('class_name', 'Unknown')}",
                 command=lambda c=cls: self._show_class_page(c),
                 bootstyle="dark",
-                width=25
+                width=45
             ).pack(fill=X, pady=2, padx=5)
         
         canvas.pack(side=LEFT, fill=BOTH, expand=YES)
@@ -231,9 +225,10 @@ class StudentDashboard:
         
         for widget in self.content_frame.winfo_children():
             widget.destroy()
-        
+
+        self.content_frame.configure(bootstyle="dark", borderwidth=1)
         if self.home_btn:
-            self.home_btn.configure(bootstyle="primary")
+            self.home_btn.configure(bootstyle="dark")
         
         # Title
         title_frame = ttk.Frame(self.content_frame, bootstyle="dark")
@@ -243,7 +238,7 @@ class StudentDashboard:
             title_frame,
             text="My Classroom",
             font=("Arial", 24, "bold"),
-            bootstyle="inverse-light"
+            bootstyle="dark"
         ).pack(anchor=W)
         
         if not self.classes:
@@ -251,16 +246,16 @@ class StudentDashboard:
             return
         
         # Canvas for scrolling
-        canvas = Canvas(self.content_frame, bg="#1a1a1a", highlightthickness=0)
+        canvas = Canvas(self.content_frame, bg="#FFFFFF", highlightthickness=0)
         scrollbar = ttk.Scrollbar(self.content_frame, orient=VERTICAL, command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, bootstyle="dark")
+        scrollable_frame = ttk.Frame(canvas, bootstyle="light")
         
         scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=scrollable_frame, anchor=NW)
         canvas.configure(yscrollcommand=scrollbar.set)
         
         # Cards grid
-        cards_container = ttk.Frame(scrollable_frame, bootstyle="dark")
+        cards_container = ttk.Frame(scrollable_frame, bootstyle="light")
         cards_container.pack(fill=BOTH, expand=YES, padx=30, pady=10)
         
         filtered_classes = self._filter_classes()
@@ -273,17 +268,16 @@ class StudentDashboard:
                 col, row = 0, row + 1
         
         for i in range(3):
-            cards_container.columnconfigure(i, weight=1)
-        
+            cards_container.columnconfigure(i, weight=1)   
         canvas.pack(side=LEFT, fill=BOTH, expand=YES)
         scrollbar.pack(side=RIGHT, fill=Y)
     
     def _show_empty_state(self):
         """Show empty state"""
-        empty = ttk.Frame(self.content_frame, bootstyle="dark")
+        empty = ttk.Frame(self.content_frame, bootstyle="light")
         empty.pack(fill=BOTH, expand=YES)
         
-        center = ttk.Frame(empty, bootstyle="dark")
+        center = ttk.Frame(empty, bootstyle="light")
         center.place(relx=0.5, rely=0.5, anchor=CENTER)
         
         ttk.Label(center, text="📚", font=("Arial", 80), bootstyle="inverse-secondary").pack(pady=20)
@@ -293,13 +287,13 @@ class StudentDashboard:
     
     def _create_class_card(self, parent, class_data):
         """Create class card"""
-        colors = ["#1967D2", "#0D652D", "#B80672", "#E37400", "#174EA6", "#9334E6"]
-        color = colors[hash(class_data.get('_id', '')) % len(colors)]
+
+        color = "#000000"
         
         card = ttk.Frame(parent, bootstyle="dark")
         
         # Color banner (black box with class name and subject)
-        banner = Canvas(card, height=80, bg=color, highlightthickness=0)
+        banner = Canvas(card, height=80, bg="#000000", highlightthickness=100)
         banner.pack(fill=X)
         
         # Class name in banner
@@ -307,28 +301,28 @@ class StudentDashboard:
             15, 15,
             text=class_data.get("class_name", "Unknown"),
             anchor=NW,
-            fill="white",
+            fill="black",
             font=("Arial", 16, "bold")
         )
         
         # Subject in banner
         banner.create_text(
             15, 45,
-            text=class_data.get("subject", ""),
+            text=class_data.get("teacher_name", ""),
             anchor=NW,
-            fill="white",
+            fill="black",
             font=("Arial", 11)
         )
         
         # Content area below the banner
         content = ttk.Frame(card, bootstyle="secondary")
         content.pack(fill=BOTH, expand=YES, padx=2, pady=2)
-        
-        # Teacher name (first position)
-        teacher_name = class_data.get('teacher_name', 'Teacher')
+
+        # Subject name (first position)
+        subject_name = class_data.get('subject', 'Subject')
         ttk.Label(
             content,
-            text=f"👤 Teacher: {teacher_name}",
+            text=f" 🎓Subject: {subject_name}",
             font=("Arial", 10),
             bootstyle="inverse-secondary"
         ).pack(anchor=W, padx=15, pady=(15, 5))
@@ -369,75 +363,117 @@ class StudentDashboard:
         return card
     
     def _show_class_page(self, class_data):
-        """Show class page"""
-        self.current_view = "class"
-        self.selected_class = class_data
-        
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
-        
-        if self.home_btn:
-            self.home_btn.configure(bootstyle="dark")
-        
-        # Banner
-        colors = ["#1967D2", "#0D652D", "#B80672", "#E37400", "#174EA6", "#9334E6"]
-        color = colors[hash(class_data.get('_id', '')) % len(colors)]
-        
-        banner = ttk.Frame(self.content_frame, height=150)
-        banner.pack(fill=X)
-        banner.pack_propagate(False)
-        
-        banner_label = ttk.Label(banner, text="", background=color)
-        banner_label.pack(fill=BOTH, expand=YES)
-        
-        title_frame = ttk.Frame(banner)
-        title_frame.place(relx=0.05, rely=0.5, anchor=W)
-        
-        ttk.Label(title_frame, text=class_data.get('class_name', 'Unknown'), font=("Arial", 28, "bold"), foreground="white", background=color).pack(anchor=W)
-        ttk.Label(title_frame, text=class_data.get('subject', ''), font=("Arial", 14), foreground="white", background=color).pack(anchor=W, pady=(5, 0))
-        
-        # Tabs
-        notebook = ttk.Notebook(self.content_frame, bootstyle="dark")
-        notebook.pack(fill=BOTH, expand=YES, padx=20, pady=20)
-        
-        stream = ttk.Frame(notebook, bootstyle="dark")
-        notebook.add(stream, text="Announcements")
-        
-        # Scrollable announcements area
-        from tkinter import Canvas, Scrollbar
-        self.stream_canvas = Canvas(stream, bg="#222", highlightthickness=0)
-        scrollbar = ttk.Scrollbar(stream, orient="vertical", command=self.stream_canvas.yview)
-        self.stream_container = ttk.Frame(self.stream_canvas, bootstyle="dark")
-        
-        self.stream_container.bind("<Configure>", lambda e: self.stream_canvas.configure(scrollregion=self.stream_canvas.bbox("all")))
-        self.stream_canvas_window = self.stream_canvas.create_window((0, 0), window=self.stream_container, anchor="nw")
-        self.stream_canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Update canvas window width when canvas is resized
-        def update_canvas_width(event):
-            self.stream_canvas.itemconfig(self.stream_canvas_window, width=event.width)
-        self.stream_canvas.bind("<Configure>", update_canvas_width)
-        
-        self.stream_canvas.pack(side="left", fill="both", expand=True, padx=20, pady=20)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Load announcements for this class
-        if self.selected_class:
-            self.client.view_announcements(self.selected_class["_id"])
-        
-        # Assignments tab
-        assignments = ttk.Frame(notebook, bootstyle="dark")
-        self._create_assignments_tab(assignments)
-        notebook.add(assignments, text="Assignments")
-        
-        # Class Materials tab
-        materials = ttk.Frame(notebook, bootstyle="dark")
-        self._create_materials_tab(materials)
-        notebook.add(materials, text="Class Materials")
-        
-        people = ttk.Frame(notebook, bootstyle="dark")
-        notebook.add(people, text="People")
-        self._create_people_tab(people, class_data)
+      """Show class page"""
+      self.current_view = "class"
+      self.selected_class = class_data
+
+  
+      for widget in self.content_frame.winfo_children():
+         widget.destroy()
+
+      if self.home_btn:
+        self.home_btn.configure(bootstyle="dark")
+
+        import tkinter as tk
+
+        banner = tk.Frame(
+        self.content_frame,
+        bg="#000000",
+        height=150
+       )
+      banner.pack(fill=tk.X)
+      banner.pack_propagate(False)
+
+      title_frame = tk.Frame(banner, bg="#000000")
+      title_frame.place(relx=0.05, rely=0.5, anchor="w")
+
+      tk.Label(
+       title_frame,
+       text=class_data.get("class_name", "Unknown"),
+       font=("Arial", 28, "bold"),
+       fg="white",
+       bg="#000000"
+     ).pack(anchor="w")
+
+      tk.Label(
+      title_frame,
+      text=class_data.get("subject", ""),
+      font=("Arial", 14),
+      fg="white",
+      bg="#000000"
+     ).pack(anchor="w", pady=(5, 0))
+
+
+      notebook = ttk.Notebook(self.content_frame, bootstyle="dark")
+      notebook.pack(fill=BOTH, expand=YES, padx=20, pady=20)
+
+      stream = ttk.Frame(notebook, bootstyle="light")
+      notebook.add(stream, text="Announcements")
+
+      self.stream_canvas = Canvas(stream, bg="#FFFFFF", highlightthickness=0)
+      scrollbar = ttk.Scrollbar(stream, orient="vertical", command=self.stream_canvas.yview)
+      self.stream_container = ttk.Frame(self.stream_canvas, bootstyle="light")
+
+      self.stream_container.bind(
+         "<Configure>",
+        lambda e: self.stream_canvas.configure(
+             scrollregion=self.stream_canvas.bbox("all")
+         )
+      )
+
+      self.stream_canvas_window = self.stream_canvas.create_window(
+        (0, 0),
+        window=self.stream_container,
+        anchor="nw"
+      )
+
+      self.stream_canvas.configure(yscrollcommand=scrollbar.set)
+      self.stream_canvas.bind(
+        "<Configure>",
+        lambda e: self.stream_canvas.itemconfig(
+            self.stream_canvas_window, width=e.width
+        )
+      )
+
+      self.stream_canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=20, pady=20)
+      scrollbar.pack(side=RIGHT, fill=Y)
+
+      if self.selected_class:
+        self.client.view_announcements(self.selected_class["_id"])
+
+      assignments = ttk.Frame(notebook, bootstyle="light")
+      self._create_assignments_tab(assignments)
+      notebook.add(assignments, text="Assignments")
+
+   
+      materials = ttk.Frame(notebook, bootstyle="light")
+      self._create_materials_tab(materials)
+      notebook.add(materials, text="Class Materials")
+  
+      people = ttk.Frame(notebook, bootstyle="light")
+      self._create_people_tab(people, class_data)
+      notebook.add(people, text="People")
+
+      discussion = ttk.Frame(notebook, bootstyle="light")
+      notebook.add(discussion, text="Discussion")
+
+      ttk.Label(
+        discussion,
+        text="💬 Discussion",
+        font=("Arial", 16, "bold"),
+        bootstyle="inverse-light"
+      ).pack(anchor=W, padx=20, pady=20)
+
+      ttk.Label(
+        discussion,
+        text="Discussion features will appear here.",
+        font=("Arial", 11),
+        bootstyle="inverse-secondary"
+      ).pack(anchor=W, padx=20)
+
+
+
+
     
     def _create_assignments_tab(self, parent):
         """Create assignments tab"""
@@ -449,7 +485,7 @@ class StudentDashboard:
         ).pack(anchor=W, padx=20, pady=20)
         
         # Assignments container
-        assignments_container = ttk.Frame(parent, bootstyle="dark")
+        assignments_container = ttk.Frame(parent, bootstyle="light")
         assignments_container.pack(fill=BOTH, expand=YES, padx=20, pady=10)
         
         # Store reference for updates
@@ -469,7 +505,7 @@ class StudentDashboard:
         ).pack(anchor=W, padx=20, pady=20)
         
         # Materials container with scrollbar
-        materials_container = ttk.Frame(parent, bootstyle="dark")
+        materials_container = ttk.Frame(parent, bootstyle="light")
         materials_container.pack(fill=BOTH, expand=YES, padx=20, pady=10)
         
         # Store reference for updates
@@ -478,6 +514,12 @@ class StudentDashboard:
         # Fetch and display materials
         if self.selected_class:
             self.client.view_materials(self.selected_class['_id'])
+    
+    def show_expanded_view(self, item_type, item_data):
+        """Show expanded view for an item"""
+        expand_view = ExpandView(self, item_type, item_data)
+        self.current_expand_view = expand_view
+        expand_view.show()
     
     def _update_stream_display(self):
         """Update the stream display with announcements"""
@@ -544,6 +586,14 @@ class StudentDashboard:
                     font=("Arial", 9),
                     bootstyle="inverse-secondary"
                 ).pack(anchor=W)
+            
+            # Expand button
+            ttk.Button(
+                frame,
+                text="🔍 Expand",
+                command=lambda ann=announcement: self.show_expanded_view('announcement', {**ann, 'class_id': self.selected_class['_id']}),
+                bootstyle="outline-secondary"
+            ).pack(anchor=E, pady=(5, 0))
         
         # Update canvas scroll region after adding content
         if hasattr(self, 'stream_canvas'):
@@ -573,16 +623,21 @@ class StudentDashboard:
         
         # Create scrollable frame
         from tkinter import Canvas, Scrollbar
-        canvas = Canvas(self.assignments_container, bg='#222222', highlightthickness=0)
+        canvas = Canvas(self.assignments_container, bg="#FFFFFF", highlightthickness=0)
         scrollbar = Scrollbar(self.assignments_container, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, bootstyle="dark")
+        scrollable_frame = ttk.Frame(canvas, bootstyle="light")
         
         scrollable_frame.bind(
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.bind(
+        "<Configure>",
+       lambda e: canvas.itemconfig(window_id, width=e.width)
+        )
+
         canvas.configure(yscrollcommand=scrollbar.set)
         
         canvas.pack(side=LEFT, fill=BOTH, expand=YES)
@@ -590,7 +645,7 @@ class StudentDashboard:
         
         # Display each assignment
         for assignment in self.assignments:
-            assignment_frame = ttk.Frame(scrollable_frame, bootstyle="dark")
+            assignment_frame = ttk.Frame(scrollable_frame, bootstyle="light")
             assignment_frame.pack(fill=X, padx=10, pady=5)
             
             # Assignment card
@@ -686,6 +741,14 @@ class StudentDashboard:
                 width=20
             )
             upload_btn.pack(pady=(10, 0))
+            
+            # Expand button
+            ttk.Button(
+                info_frame,
+                text="🔍 Expand",
+                command=lambda ass=assignment: self.show_expanded_view('assignment', {**ass, 'class_id': self.selected_class['_id']}),
+                bootstyle="outline-secondary"
+            ).pack(pady=(5, 0))
     
     def _display_materials(self):
         """Display materials in classwork tab"""
@@ -716,8 +779,13 @@ class StudentDashboard:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.bind(
+        "<Configure>",
+        lambda e: canvas.itemconfig(window_id, width=e.width)
+      )
+
         
         canvas.pack(side=LEFT, fill=BOTH, expand=YES)
         scrollbar.pack(side=RIGHT, fill=Y)
@@ -830,6 +898,14 @@ class StudentDashboard:
                     font=("Arial", 9),
                     bootstyle="inverse-secondary"
                 ).pack(anchor=W, pady=(2, 0))
+            
+            # Expand button
+            ttk.Button(
+                info_frame,
+                text="🔍 Expand",
+                command=lambda mat=material: self.show_expanded_view('material', {**mat, 'class_id': self.selected_class['_id']}),
+                bootstyle="outline-secondary"
+            ).pack(pady=(5, 0))
     
     def _create_people_tab(self, parent, class_data):
         """Create people tab with teacher and students"""
@@ -873,9 +949,14 @@ class StudentDashboard:
                 lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
             )
             
-            canvas.create_window((0, 0), window=students_container, anchor=NW)
+            window_id = canvas.create_window((0, 0), window=students_container, anchor="nw")
+
             canvas.configure(yscrollcommand=scrollbar.set)
-            
+            canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfig(window_id, width=e.width)
+            )
+
             canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=(20, 0))
             scrollbar.pack(side=RIGHT, fill=Y, padx=(0, 20))
             
@@ -1141,6 +1222,19 @@ class StudentDashboard:
                 else:
                     print(f"[DEBUG] No submission found or invalid format")
                     # Don't show message here - will be handled by ERROR response
+            elif "comments" in message:
+                # Handle VIEW_COMMENTS response
+                print(f"[DEBUG COMMENTS] Received comments response: {len(message.get('comments', []))} comments")
+                if self.current_expand_view:
+                    self.current_expand_view.comments = message.get("comments", [])
+                    print(f"[DEBUG COMMENTS] Set comments on expand_view, calling _update_comments_display()")
+                    self.current_expand_view._update_comments_display()
+                else:
+                    print(f"[DEBUG COMMENTS] No current_expand_view to update comments")
+            elif "comment_id" in message:
+                # Handle POST_COMMENT success, refresh comments
+                if self.current_expand_view:
+                    self.current_expand_view._load_comments()
             elif message.get("message", "").startswith("Successfully joined"):
                 # Refresh classes first to show the new class immediately
                 self.client.view_classes()
@@ -1254,13 +1348,40 @@ class StudentDashboard:
             
         elif notif_type == 'NEW_COMMENT':
             commenter_name = notification.get('commenter_name', 'Someone')
-            announcement_title = notification.get('announcement_title', 'an announcement')
+            item_type = notification.get('item_type', 'item')
+            class_name = notification.get('class_name', 'Unknown Class')
+            comment_preview = notification.get('comment_preview', '')
+            item_id = notification.get('item_id')
+            class_id = notification.get('class_id')
             
-            # Show notification popup
-            messagebox.showinfo(
-                "💬 New Comment",
-                f"{commenter_name} commented on {announcement_title}"
-            )
+            print(f"[DEBUG NOTIFICATION] Received NEW_COMMENT: item_id={item_id}, item_type={item_type}")
+            print(f"[DEBUG NOTIFICATION] current_expand_view exists: {self.current_expand_view is not None}")
+            if self.current_expand_view:
+                current_item_id = self.current_expand_view.item_data.get('_id')
+                print(f"[DEBUG NOTIFICATION] current_item_id: {current_item_id}")
+                print(f"[DEBUG NOTIFICATION] IDs match: {current_item_id == item_id}")
+            
+            # Show notification popup and refresh comments after user clicks OK
+            msg = f"💬 New Comment on {item_type.title()}\n\n"
+            msg += f"Class: {class_name}\n"
+            msg += f"From: {commenter_name}\n"
+            if comment_preview:
+                msg += f"Comment: {comment_preview[:50]}{'...' if len(comment_preview) > 50 else ''}\n\n"
+            msg += "Check your classes to view and reply."
+            
+            # Check if currently viewing the expanded item
+            should_refresh_comments = (self.current_expand_view and 
+                self.current_expand_view.item_data.get('_id') == item_id)
+            
+            print(f"[DEBUG NOTIFICATION] should_refresh_comments: {should_refresh_comments}")
+            
+            if should_refresh_comments:
+                print(f"[DEBUG] Will refresh comments after notification popup is dismissed")
+                # Schedule popup with callback to refresh comments after dismissal
+                self.window.after(50, lambda: self._show_comment_notification_and_refresh(msg, item_type))
+            else:
+                # Just show popup without refreshing
+                self.window.after(50, lambda: self._show_notification_popup("💬 New Comment", msg))
         
         # Refresh notification page if currently viewing it
         if self.current_view == "notifications":
@@ -1292,6 +1413,25 @@ class StudentDashboard:
             # Silently ignore errors (window closed, bad window path, etc.)
             pass
     
+    def _show_comment_notification_and_refresh(self, message, item_type):
+        """Show comment notification popup and refresh comments after dismissal"""
+        try:
+            # Check if window still exists and is valid
+            if self.window and self.window.winfo_exists():
+                print(f"[DEBUG] Showing comment notification popup for {item_type}")
+                messagebox.showinfo("💬 New Comment", message)
+                # After popup is dismissed, refresh comments
+                print(f"[DEBUG] Popup dismissed, now refreshing comments for {item_type}")
+                if self.current_expand_view:
+                    print(f"[DEBUG] Calling _load_comments() on current_expand_view")
+                    self.current_expand_view._load_comments()
+                else:
+                    print(f"[DEBUG] No current_expand_view to refresh comments")
+        except Exception as e:
+            # Silently ignore errors (window closed, bad window path, etc.)
+            print(f"[DEBUG] Error in _show_comment_notification_and_refresh: {e}")
+            pass
+    
     def _show_todo_page(self):
         """Show To-Do page with all assignments from all classes"""
         self.current_view = "todo"
@@ -1303,6 +1443,7 @@ class StudentDashboard:
         # To-Do page header
         header = ttk.Frame(self.content_frame, bootstyle="dark")
         header.pack(fill=X, padx=40, pady=20)
+
         
         ttk.Label(
             header,
@@ -1365,9 +1506,13 @@ class StudentDashboard:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor=NW)
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor=NW)
         canvas.configure(yscrollcommand=scrollbar.set)
-        
+        canvas.bind(
+         "<Configure>",
+          lambda e: canvas.itemconfig(window_id, width=e.width)
+       )
+
         # Assignments list
         list_frame = ttk.Frame(scrollable_frame, bootstyle="dark")
         list_frame.pack(fill=BOTH, expand=YES, padx=30, pady=10)
@@ -1505,7 +1650,7 @@ class StudentDashboard:
         # Notification types in compact format
         ttk.Label(
             info_frame,
-            text="• Announcements  • Assignments  • Materials  • Comments  • Deadlines  • Grades  • Updates",
+            text="• Announcements  • Assignments  • Materials  • Comments  • Deadlines   ",
             font=("Arial", 10),
             bootstyle="inverse-secondary"
         ).pack(anchor=W, pady=2, padx=20)
@@ -1563,8 +1708,13 @@ class StudentDashboard:
             notif_frame = ttk.Frame(notif_canvas, bootstyle="dark")
             
             notif_frame.bind("<Configure>", lambda e: notif_canvas.configure(scrollregion=notif_canvas.bbox("all")))
-            notif_canvas.create_window((0, 0), window=notif_frame, anchor=NW)
+            window_id = notif_canvas.create_window((0, 0), window=notif_frame, anchor=NW)
             notif_canvas.configure(yscrollcommand=notif_scrollbar.set)
+            notif_canvas.bind(
+              "<Configure>",
+                lambda e: notif_canvas.itemconfig(window_id, width=e.width)
+                )
+
             
             # Display notifications
             for notif in self.notification_history[:20]:  # Show last 20

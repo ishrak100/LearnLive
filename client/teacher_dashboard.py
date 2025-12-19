@@ -8,6 +8,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from client.utility import LearnLiveClient
+from client.expand_gui import ExpandView
 
 
 class TeacherDashboard:
@@ -35,12 +36,13 @@ class TeacherDashboard:
         self.assignments_container = None  # Reference to assignments display container
         self.submissions_dialog = None  # Track submissions dialog
         self.pending_submissions = []  # Store submissions data
+        self.current_expand_view = None  # Track current expanded view for comments
         
         self.client.set_message_callback(self._handle_server_message)
     
     def show(self):
         """Show dashboard"""
-        self.window = ttk.Window(themename="darkly")
+        self.window = ttk.Window(themename="minty")
         self.window.title(f"LearnLive - {self.user_data.get('name', 'Teacher')}")
         self.window.geometry("1400x900")
         self.window.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -115,8 +117,8 @@ class TeacherDashboard:
             font=("Arial", 10, "bold"),
         ).pack(anchor=W, padx=20, pady=(10, 5))
         
-        self.classes_frame = ttk.Frame(sidebar)
-        self.classes_frame.pack(fill=BOTH, expand=YES, padx=10)
+        self.classes_frame = ttk.Frame(sidebar,bootstyle = "light")
+        self.classes_frame.pack(fill=BOTH, expand=YES, padx=0)
         
         # Logout button at bottom
         logout_frame = ttk.Frame(sidebar)
@@ -266,18 +268,13 @@ class TeacherDashboard:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor=NW)
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        # Submissions list
-        list_frame = ttk.Frame(scrollable_frame, bootstyle="dark")
-        list_frame.pack(fill=BOTH, expand=YES, padx=30, pady=10)
-        
-        for submission in submissions:
-            self._create_submission_card(list_frame, submission).pack(fill=X, pady=8)
-        
-        canvas.pack(side=LEFT, fill=BOTH, expand=YES)
-        scrollbar.pack(side=RIGHT, fill=Y)
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfig(window_id, width=e.width)
+        )
     
     def _create_submission_card(self, parent, submission):
         """Create a submission card"""
@@ -444,7 +441,7 @@ class TeacherDashboard:
             15, 15,
             text=cls.get("class_name", "Unknown"),
             anchor=NW,
-            fill="white",
+            fill="black",
             font=("Arial", 16, "bold")
         )
         
@@ -452,7 +449,7 @@ class TeacherDashboard:
             15, 45,
             text=cls.get("subject", ""),
             anchor=NW,
-            fill="white",
+            fill="black",
             font=("Arial", 11)
         )
         
@@ -722,6 +719,14 @@ class TeacherDashboard:
                     font=("Arial", 9),
                     bootstyle="inverse-secondary"
                 ).pack(anchor=W)
+            
+            # Expand button
+            ttk.Button(
+                frame,
+                text="🔍 Expand",
+                command=lambda ann=announcement: self.show_expanded_view('announcement', {**ann, 'class_id': self.selected_class['_id']}),
+                bootstyle="outline-secondary"
+            ).pack(anchor=E, pady=(5, 0))
         
         # Update canvas scroll region after adding content
         if hasattr(self, 'stream_canvas'):
@@ -757,6 +762,12 @@ class TeacherDashboard:
         # Fetch and display assignments
         if self.selected_class:
             self.client.view_assignments(self.selected_class['_id'])
+    
+    def show_expanded_view(self, item_type, item_data):
+        """Show expanded view for an item"""
+        expand_view = ExpandView(self, item_type, item_data)
+        self.current_expand_view = expand_view
+        expand_view.show()
     
     def _create_materials_tab(self, parent):
         """Create materials tab"""
@@ -814,9 +825,13 @@ class TeacherDashboard:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        
+        canvas.bind(
+         "<Configure>",
+        lambda e: canvas.itemconfig(window_id, width=e.width)
+        )
+
         canvas.pack(side=LEFT, fill=BOTH, expand=YES)
         scrollbar.pack(side=RIGHT, fill=Y)
         
@@ -853,11 +868,10 @@ class TeacherDashboard:
             if file_path:
                 def open_material(path=file_path):
                     import os
-                    import subprocess
                     if os.path.exists(path):
                         try:
-                            # Use 'open' command on macOS to open file with default application
-                            subprocess.run(['open', path])
+                            # Use os.startfile for Windows
+                            os.startfile(path)
                         except Exception as e:
                             messagebox.showerror("Error", f"Could not open file: {str(e)}")
                     else:
@@ -898,6 +912,14 @@ class TeacherDashboard:
                     font=("Arial", 9),
                     bootstyle="inverse-secondary"
                 ).pack(anchor=W, pady=(2, 0))
+            
+            # Expand button
+            ttk.Button(
+                info_frame,
+                text="🔍 Expand",
+                command=lambda mat=material: self.show_expanded_view('material', {**mat, 'class_id': self.selected_class['_id']}),
+                bootstyle="outline-secondary"
+            ).pack(pady=(5, 0))
     
     def _display_assignments(self):
         """Display assignments in assignments tab"""
@@ -928,8 +950,12 @@ class TeacherDashboard:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfig(window_id, width=e.width)
+          )
         
         canvas.pack(side=LEFT, fill=BOTH, expand=YES)
         scrollbar.pack(side=RIGHT, fill=Y)
@@ -1009,6 +1035,14 @@ class TeacherDashboard:
                 bootstyle="info",
                 width=20
             ).pack(pady=(10, 0))
+            
+            # Expand button
+            ttk.Button(
+                info_frame,
+                text="🔍 Expand",
+                command=lambda ass=assignment: self.show_expanded_view('assignment', {**ass, 'class_id': self.selected_class['_id']}),
+                bootstyle="outline-secondary"
+            ).pack(pady=(5, 0))
     
     def _create_people_tab(self, parent):
         """Create people tab"""
@@ -1052,8 +1086,12 @@ class TeacherDashboard:
                 lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
             )
             
-            canvas.create_window((0, 0), window=students_container, anchor=NW)
+            window_id = canvas.create_window((0, 0), window=students_container, anchor="nw")
             canvas.configure(yscrollcommand=scrollbar.set)
+            canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfig(window_id, width=e.width)
+           )
             
             canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=(20, 0))
             scrollbar.pack(side=RIGHT, fill=Y, padx=(0, 20))
@@ -1683,6 +1721,19 @@ class TeacherDashboard:
                     else:
                         messagebox.showerror("Error", "No file data received")
                     delattr(self, 'pending_download')
+            elif "comments" in message:
+                # Handle VIEW_COMMENTS response
+                print(f"[DEBUG TEACHER COMMENTS] Received comments response: {len(message.get('comments', []))} comments")
+                if self.current_expand_view:
+                    self.current_expand_view.comments = message.get("comments", [])
+                    print(f"[DEBUG TEACHER COMMENTS] Set comments on expand_view, calling _update_comments_display()")
+                    self.current_expand_view._update_comments_display()
+                else:
+                    print(f"[DEBUG TEACHER COMMENTS] No current_expand_view to update comments")
+            elif "comment_id" in message:
+                # Handle POST_COMMENT success, refresh comments
+                if self.current_expand_view:
+                    self.current_expand_view._load_comments()
             elif message.get("message", "").startswith("Class created"):
                 # Refresh classes first to show the new class immediately
                 self.client.view_classes()
@@ -1699,6 +1750,41 @@ class TeacherDashboard:
                 if self.current_view == "toget":
                     print(f"[DEBUG] Refreshing To-Get page after new submission")
                     self.client.send_message('GET_TEACHER_SUBMISSIONS', {})
+            elif notif_type == 'NEW_COMMENT':
+                commenter_name = notification.get('commenter_name', 'Someone')
+                item_type = notification.get('item_type', 'item')
+                class_name = notification.get('class_name', 'Unknown Class')
+                comment_preview = notification.get('comment_preview', '')
+                item_id = notification.get('item_id')
+                
+                print(f"[DEBUG TEACHER NOTIFICATION] Received NEW_COMMENT: item_id={item_id}, item_type={item_type}, commenter={commenter_name}")
+                print(f"[DEBUG TEACHER NOTIFICATION] current_expand_view exists: {self.current_expand_view is not None}")
+                if self.current_expand_view:
+                    current_item_id = self.current_expand_view.item_data.get('_id')
+                    print(f"[DEBUG TEACHER NOTIFICATION] current_item_id: {current_item_id}")
+                    print(f"[DEBUG TEACHER NOTIFICATION] IDs match: {current_item_id == item_id}")
+                
+                # Show notification popup and refresh comments after user clicks OK
+                msg = f"💬 New Comment on {item_type.title()}\n\n"
+                msg += f"Class: {class_name}\n"
+                msg += f"From: {commenter_name}\n"
+                if comment_preview:
+                    msg += f"Comment: {comment_preview[:50]}{'...' if len(comment_preview) > 50 else ''}\n\n"
+                msg += "Check your classes to view and reply."
+                
+                # Check if currently viewing the expanded item
+                should_refresh_comments = (self.current_expand_view and 
+                    self.current_expand_view.item_data.get('_id') == item_id)
+                
+                print(f"[DEBUG TEACHER NOTIFICATION] should_refresh_comments: {should_refresh_comments}")
+                
+                if should_refresh_comments:
+                    print(f"[DEBUG TEACHER] Will refresh comments after notification popup is dismissed")
+                    # Schedule popup with callback to refresh comments after dismissal
+                    self.window.after(50, lambda: self._show_comment_notification_and_refresh(msg, item_type))
+                else:
+                    # Just show popup without refreshing
+                    self.window.after(50, lambda: messagebox.showinfo("💬 New Comment", msg))
         elif msg_type == "ERROR":
             messagebox.showerror("Error", message.get("error", "Unknown error"))
     
@@ -1759,8 +1845,12 @@ class TeacherDashboard:
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfig(window_id, width=e.width)
+        )
         
         canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=(20, 0), pady=(0, 20))
         scrollbar.pack(side=RIGHT, fill=Y, pady=(0, 20), padx=(0, 20))
@@ -1896,6 +1986,25 @@ class TeacherDashboard:
                     bootstyle="info-outline",
                     width=12
                 ).pack(side=RIGHT, padx=(10, 0))
+    
+    def _show_comment_notification_and_refresh(self, message, item_type):
+        """Show comment notification popup and refresh comments after dismissal"""
+        try:
+            # Check if window still exists and is valid
+            if self.window and self.window.winfo_exists():
+                print(f"[DEBUG TEACHER] Showing comment notification popup for {item_type}")
+                messagebox.showinfo("💬 New Comment", message)
+                # After popup is dismissed, refresh comments
+                print(f"[DEBUG TEACHER] Popup dismissed, now refreshing comments for {item_type}")
+                if self.current_expand_view:
+                    print(f"[DEBUG TEACHER] Calling _load_comments() on current_expand_view")
+                    self.current_expand_view._load_comments()
+                else:
+                    print(f"[DEBUG TEACHER] No current_expand_view to refresh comments")
+        except Exception as e:
+            # Silently ignore errors (window closed, bad window path, etc.)
+            print(f"[DEBUG TEACHER] Error in _show_comment_notification_and_refresh: {e}")
+            pass
     
     def _on_closing(self):
         """Handle closing"""

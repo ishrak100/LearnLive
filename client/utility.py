@@ -308,17 +308,20 @@ class LearnLiveClient:
             "class_id": class_id
         })
     
-    def post_comment(self, announcement_id: str, comment_text: str) -> bool:
-        """Post a comment on announcement."""
+    def post_comment(self, item_id: str, item_type: str, class_id: str, comment_text: str) -> bool:
+        """Post a comment on an item (announcement, assignment, or material)."""
         return self.send_message("POST_COMMENT", {
-            "announcement_id": announcement_id,
+            "item_id": item_id,
+            "item_type": item_type,
+            "class_id": class_id,
             "comment_text": comment_text
         })
     
-    def view_comments(self, announcement_id: str) -> bool:
-        """View comments on announcement."""
+    def view_comments(self, item_id: str, item_type: str) -> bool:
+        """View comments on an item."""
         return self.send_message("VIEW_COMMENTS", {
-            "announcement_id": announcement_id
+            "item_id": item_id,
+            "item_type": item_type
         })
     
     def upload_material(self, class_id: str, material_name: str, 
