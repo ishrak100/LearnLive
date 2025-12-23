@@ -157,14 +157,35 @@ class LearnLiveServer:
                         print(f"📲 Client registered for notifications: {user_data.get('name')} ({user_id})")
                     
                     # Send response with length prefix
-                    response_data = json.dumps(response).encode()
-                    message_length = len(response_data)
-                    length_prefix = message_length.to_bytes(4, byteorder='big')
-                    client_socket.sendall(length_prefix + response_data)
-                    
-                    print(f"   ✅ Response sent ({len(response_data)} bytes)\n")
+                    try:
+                        response_data = json.dumps(response).encode()
+                        message_length = len(response_data)
+                        length_prefix = message_length.to_bytes(4, byteorder='big')
+                        client_socket.sendall(length_prefix + response_data)
+                        
+                        print(f"   ✅ Response sent ({len(response_data)} bytes)\n")
+                    except (TypeError, ValueError) as e:
+                        # JSON serialization failed (e.g., datetime objects)
+                        print(f"   ❌ JSON serialization error: {e}")
+                        error_response = {
+                            'type': RESP_ERROR,
+                            'error': 'Server serialization error'
+                        }
+                        error_data = json.dumps(error_response).encode()
+                        error_length = len(error_data)
+                        length_prefix = error_length.to_bytes(4, byteorder='big')
+                        client_socket.sendall(length_prefix + error_data)
+                        print(f"   ❌ Error response sent\n")
                     
                 except json.JSONDecodeError:
+                    error_response = {
+                        'type': RESP_ERROR,
+                        'error': 'Invalid JSON format'
+                    }
+                    error_data = json.dumps(error_response).encode()
+                    error_length = len(error_data)
+                    length_prefix = error_length.to_bytes(4, byteorder='big')
+                    client_socket.sendall(length_prefix + error_data)
                     error_response = {
                         'type': RESP_ERROR,
                         'error': 'Invalid JSON format'
@@ -592,15 +613,62 @@ class LearnLiveServer:
     
     def handle_post_comment(self, data):
         """Handle post comment request"""
-        announcement_id = data.get('announcement_id')
+        item_id = data.get('item_id')
+        item_type = data.get('item_type')
+        class_id = data.get('class_id')
         comment_text = data.get('comment_text')
         parent_comment_id = data.get('parent_comment_id')
         
         result = self.db.post_comment(
-            announcement_id, data['user_id'], comment_text, parent_comment_id
+            item_id, item_type, class_id, data['user_id'], comment_text, parent_comment_id
         )
         
         if result['success']:
+            # Get class data and student emails for notifications
+            class_data = self.db.get_class_by_id(class_id)
+            if class_data['success'] and class_data['class']:
+                class_info = class_data['class']
+                student_emails = []
+                teacher_email = None
+                
+                # Get teacher email
+                teacher_id = class_info.get('teacher_id')
+                if teacher_id:
+                    teacher = self.db.get_user_by_id(teacher_id)
+                    if teacher['success']:
+                        teacher_email = teacher['user'].get('email')
+                
+                # Get student emails from students
+                for student_id in class_info.get('students', []):
+                    student = self.db.get_user_by_id(student_id)
+                    if student['success']:
+                        student_emails.append(student['user'].get('email'))
+                
+                # Get commenter name
+                commenter = self.db.get_user_by_id(data['user_id'])
+                commenter_name = commenter['user']['name'] if commenter['success'] else 'Unknown'
+                
+                # Send notifications (email + TCP) to all class members (students + teacher)
+                comment_data = {
+                    'item_id': item_id,
+                    'item_type': item_type,
+                    'comment_text': comment_text,
+                    'commenter_name': commenter_name,
+                    'created_at': result.get('created_at', '')
+                }
+                
+                # Combine all recipient IDs (students + teacher)
+                all_recipient_ids = class_info.get('students', []).copy()
+                if teacher_id:
+                    all_recipient_ids.append(teacher_id)
+                
+                # Combine all emails for email notifications
+                all_emails = student_emails.copy()
+                if teacher_email:
+                    all_emails.append(teacher_email)
+                
+                self.notifier.notify_comment_posted(class_info, comment_data, all_recipient_ids)
+            
             return {
                 'type': RESP_SUCCESS,
                 'success': True,
@@ -611,8 +679,9 @@ class LearnLiveServer:
     
     def handle_view_comments(self, data):
         """Handle view comments request"""
-        announcement_id = data.get('announcement_id')
-        result = self.db.get_comments(announcement_id)
+        item_id = data.get('item_id')
+        item_type = data.get('item_type')
+        result = self.db.get_comments(item_id, item_type)
         
         if result['success']:
             return {
@@ -793,6 +862,8 @@ class LearnLiveServer:
             }
         else:
             return {'type': RESP_ERROR, 'success': False, 'error': result['error']}
+    
+
     
     def stop(self):
         """Stop the server"""

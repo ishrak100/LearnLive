@@ -458,34 +458,72 @@ class Database:
     
     # ========== COMMENT OPERATIONS ==========
     
-    def post_comment(self, announcement_id, user_id, comment_text, parent_comment_id=None):
-        """Post a comment on an announcement"""
+    def post_comment(self, item_id, item_type, class_id, user_id, comment_text, parent_comment_id=None):
+        """Post a comment on an item (announcement, assignment, or material)"""
         try:
             comment = {
-                'announcement_id': announcement_id,
+                'item_id': item_id,
+                'item_type': item_type,
+                'class_id': class_id,
                 'user_id': user_id,
                 'comment_text': comment_text,
                 'parent_comment_id': parent_comment_id,
                 'created_at': datetime.now()
             }
+            print(f"[DEBUG] Inserting comment: {comment}")
             result = self.comments.insert_one(comment)
+            print(f"[DEBUG] Comment inserted with ID: {result.inserted_id}")
             return {'success': True, 'comment_id': str(result.inserted_id)}
         except Exception as e:
+            print(f"[DEBUG] Error inserting comment: {e}")
             return {'success': False, 'error': str(e)}
     
-    def get_comments(self, announcement_id):
-        """Get all comments for an announcement"""
+    def get_comments(self, item_id, item_type):
+        """Get all comments for an item"""
         try:
-            comments = list(self.comments.find({'announcement_id': announcement_id}).sort('created_at', 1))
+            # Query for new schema comments only
+            query = {'item_id': item_id, 'item_type': item_type}
+            
+            print(f"[DEBUG] Querying comments with: {query}")
+            comments = list(self.comments.find(query).sort('created_at', -1))
+            print(f"[DEBUG] Found {len(comments)} comments")
+            
             for c in comments:
+                print(f"[DEBUG] Processing comment: {c}")
                 c['_id'] = str(c['_id'])
-                # Get user name
-                from bson.objectid import ObjectId
-                user = self.users.find_one({'_id': ObjectId(c['user_id'])})
-                if user:
-                    c['user_name'] = user['name']
+                
+                # Handle backward compatibility for old comment structure
+                if 'user_name' in c:
+                    c['commenter_name'] = c['user_name']
+                    del c['user_name']
+                    print(f"[DEBUG] Renamed user_name to commenter_name")
+                else:
+                    # Get user name for new structure
+                    from bson.objectid import ObjectId
+                    user = self.users.find_one({'_id': ObjectId(c['user_id'])})
+                    if user:
+                        c['commenter_name'] = user['name']
+                    else:
+                        c['commenter_name'] = 'Unknown User'
+                    print(f"[DEBUG] Set commenter_name from user lookup: {c['commenter_name']}")
+                
+                # Format timestamp and remove original datetime
+                if isinstance(c['created_at'], datetime):
+                    c['timestamp'] = c['created_at'].isoformat()
+                    print(f"[DEBUG] Converted created_at to timestamp: {c['timestamp']}")
+                else:
+                    c['timestamp'] = str(c['created_at'])
+                # Remove the datetime object to avoid JSON serialization issues
+                if 'created_at' in c:
+                    del c['created_at']
+                    print(f"[DEBUG] Removed created_at field")
+                
+                print(f"[DEBUG] Processed comment: {c}")
+            
+            print(f"[DEBUG] Returning {len(comments)} processed comments")
             return {'success': True, 'comments': comments}
         except Exception as e:
+            print(f"[DEBUG] Error getting comments: {e}")
             return {'success': False, 'error': str(e)}
     
     # ========== MATERIAL OPERATIONS ==========

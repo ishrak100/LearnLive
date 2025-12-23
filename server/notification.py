@@ -380,15 +380,66 @@ Login to LearnLive to view details.
         print(f"📧 Notification: New announcement - {announcement_title}")
         return True
     
-    def notify_new_comment(self, announcement_id, commenter_email):
-        """Notify about new comment"""
-        subject = "New Comment on Announcement"
-        body = f"""
-Someone commented on an announcement!
-
-Commenter: {commenter_email}
-
-Login to LearnLive to view the comment.
+    def notify_comment_posted(self, class_data, comment_data, recipient_ids):
         """
-        print(f"📧 Notification: New comment from {commenter_email}")
+        Notify all class members (students + teacher) when someone posts a comment
+        Sends both email and TCP notifications
+        """
+        class_id = class_data.get('_id')
+        class_name = class_data.get('class_name', 'Unknown Class')
+        item_type = comment_data.get('item_type', 'item')
+        commenter_name = comment_data.get('commenter_name', 'Someone')
+        comment_text = comment_data.get('comment_text', '')
+        
+        subject = f"💬 New Comment on {item_type.title()}"
+        body = f"""
+Hello,
+
+{commenter_name} commented on a {item_type} in your class!
+
+Class: {class_name}
+Comment: {comment_text[:200]}{"..." if len(comment_text) > 200 else ""}
+
+Login to LearnLive to view the full comment and reply.
+
+Best regards,
+LearnLive Team
+        """
+        
+        notification_data = {
+            'type': 'NEW_COMMENT',
+            'class_id': class_id,
+            'class_name': class_name,
+            'item_type': item_type,
+            'item_id': comment_data.get('item_id'),
+            'commenter_name': commenter_name,
+            'comment_preview': comment_text[:100],
+            'timestamp': comment_data.get('created_at', '')
+        }
+        
+        # Get recipient emails and send email notifications
+        recipient_emails = []
+        for recipient_id in recipient_ids:
+            recipient = self.db.get_user_by_id(recipient_id)
+            if recipient['success']:
+                email = recipient['user'].get('email')
+                if email:
+                    recipient_emails.append(email)
+                    # Send email notification
+                    self.send_email(email, subject, body)
+        
+        print(f"[DEBUG] Sending comment notifications to {len(recipient_ids)} recipients")
+        
+        # Save all notifications to database
+        for recipient_id in recipient_ids:
+            self.db.save_notification(recipient_id, notification_data)
+        
+        # Send TCP notifications to online recipients only
+        online_count = 0
+        for recipient_id in recipient_ids:
+            result = self.send_tcp_notification(recipient_id, notification_data)
+            if result:
+                online_count += 1
+        
+        print(f"💬 Comment notifications sent: {commenter_name} on {item_type} ({online_count}/{len(recipient_ids)} online)")
         return True
