@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from client.utility import LearnLiveClient
 from client.expand_gui import ExpandView
+from client.discussion_gui import DiscussionView
 
 
 class StudentDashboard:
@@ -457,19 +458,8 @@ class StudentDashboard:
       discussion = ttk.Frame(notebook, bootstyle="light")
       notebook.add(discussion, text="Discussion")
 
-      ttk.Label(
-        discussion,
-        text="💬 Discussion",
-        font=("Arial", 16, "bold"),
-        bootstyle="inverse-light"
-      ).pack(anchor=W, padx=20, pady=20)
-
-      ttk.Label(
-        discussion,
-        text="Discussion features will appear here.",
-        font=("Arial", 11),
-        bootstyle="inverse-secondary"
-      ).pack(anchor=W, padx=20)
+      discussion_view = DiscussionView(self)
+      discussion_view.create_tab_content(discussion)
 
 
 
@@ -1774,7 +1764,7 @@ class StudentDashboard:
             notif_canvas.pack(side=LEFT, fill=BOTH, expand=YES)
             notif_scrollbar.pack(side=RIGHT, fill=Y)
         
-        # Track current view
+        
         self.current_view = "notifications"
     
     def _logout(self):

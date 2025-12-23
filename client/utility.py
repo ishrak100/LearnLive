@@ -406,3 +406,17 @@ class LearnLiveClient:
         return self.send_message("GET_NOTIFICATIONS", {
             "user_id": user_id
         })
+    
+    def get_notifications(self, user_id: str) -> bool:
+        """
+        Get notifications for a user.
+        
+        Args:
+            user_id: User ID
+            
+        Returns:
+            bool: True if request sent
+        """
+        return self.send_message("GET_NOTIFICATIONS", {
+            "user_id": user_id
+        })

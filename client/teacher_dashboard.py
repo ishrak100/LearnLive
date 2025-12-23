@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from client.utility import LearnLiveClient
 from client.expand_gui import ExpandView
+from client.discussion_gui import DiscussionView
 
 
 class TeacherDashboard:
@@ -587,6 +588,12 @@ class TeacherDashboard:
         people_frame = ttk.Frame(notebook, bootstyle="dark")
         self._create_people_tab(people_frame)
         notebook.add(people_frame, text="People")
+        
+        # Discussion tab
+        discussion_frame = ttk.Frame(notebook, bootstyle="dark")
+        discussion_view = DiscussionView(self)
+        discussion_view.create_tab_content(discussion_frame)
+        notebook.add(discussion_frame, text="Discussion")
     
     def _create_stream_tab(self, parent):
         """Create announcements tab"""
@@ -1723,13 +1730,9 @@ class TeacherDashboard:
                     delattr(self, 'pending_download')
             elif "comments" in message:
                 # Handle VIEW_COMMENTS response
-                print(f"[DEBUG TEACHER COMMENTS] Received comments response: {len(message.get('comments', []))} comments")
                 if self.current_expand_view:
                     self.current_expand_view.comments = message.get("comments", [])
-                    print(f"[DEBUG TEACHER COMMENTS] Set comments on expand_view, calling _update_comments_display()")
                     self.current_expand_view._update_comments_display()
-                else:
-                    print(f"[DEBUG TEACHER COMMENTS] No current_expand_view to update comments")
             elif "comment_id" in message:
                 # Handle POST_COMMENT success, refresh comments
                 if self.current_expand_view:
@@ -1757,13 +1760,6 @@ class TeacherDashboard:
                 comment_preview = notification.get('comment_preview', '')
                 item_id = notification.get('item_id')
                 
-                print(f"[DEBUG TEACHER NOTIFICATION] Received NEW_COMMENT: item_id={item_id}, item_type={item_type}, commenter={commenter_name}")
-                print(f"[DEBUG TEACHER NOTIFICATION] current_expand_view exists: {self.current_expand_view is not None}")
-                if self.current_expand_view:
-                    current_item_id = self.current_expand_view.item_data.get('_id')
-                    print(f"[DEBUG TEACHER NOTIFICATION] current_item_id: {current_item_id}")
-                    print(f"[DEBUG TEACHER NOTIFICATION] IDs match: {current_item_id == item_id}")
-                
                 # Show notification popup and refresh comments after user clicks OK
                 msg = f"💬 New Comment on {item_type.title()}\n\n"
                 msg += f"Class: {class_name}\n"
@@ -1776,10 +1772,8 @@ class TeacherDashboard:
                 should_refresh_comments = (self.current_expand_view and 
                     self.current_expand_view.item_data.get('_id') == item_id)
                 
-                print(f"[DEBUG TEACHER NOTIFICATION] should_refresh_comments: {should_refresh_comments}")
-                
                 if should_refresh_comments:
-                    print(f"[DEBUG TEACHER] Will refresh comments after notification popup is dismissed")
+                    print(f"[DEBUG] Will refresh comments after notification popup is dismissed")
                     # Schedule popup with callback to refresh comments after dismissal
                     self.window.after(50, lambda: self._show_comment_notification_and_refresh(msg, item_type))
                 else:
@@ -1992,18 +1986,13 @@ class TeacherDashboard:
         try:
             # Check if window still exists and is valid
             if self.window and self.window.winfo_exists():
-                print(f"[DEBUG TEACHER] Showing comment notification popup for {item_type}")
                 messagebox.showinfo("💬 New Comment", message)
                 # After popup is dismissed, refresh comments
-                print(f"[DEBUG TEACHER] Popup dismissed, now refreshing comments for {item_type}")
+                print(f"[DEBUG] Popup dismissed, now refreshing comments for {item_type}")
                 if self.current_expand_view:
-                    print(f"[DEBUG TEACHER] Calling _load_comments() on current_expand_view")
                     self.current_expand_view._load_comments()
-                else:
-                    print(f"[DEBUG TEACHER] No current_expand_view to refresh comments")
         except Exception as e:
             # Silently ignore errors (window closed, bad window path, etc.)
-            print(f"[DEBUG TEACHER] Error in _show_comment_notification_and_refresh: {e}")
             pass
     
     def _on_closing(self):
