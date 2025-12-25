@@ -28,6 +28,14 @@ class NotificationHandler:
         """Register online client for real-time notifications"""
         self.online_clients[user_id] = (client_socket, user_data)
         print(f"🔔 User {user_id} registered for notifications")
+        # Inform discussion handler about notifier so it can broadcast
+        try:
+            import server.discussion_handler as dh
+            if hasattr(dh, 'set_notifier'):
+                dh.set_notifier(self)
+        except Exception:
+            # Not critical; if discussion handler isn't available we'll skip registration
+            pass
     
     def unregister_client(self, user_id):
         """Unregister client"""

@@ -593,6 +593,8 @@ class TeacherDashboard:
         discussion_frame = ttk.Frame(notebook, bootstyle="dark")
         discussion_view = DiscussionView(self)
         discussion_view.create_tab_content(discussion_frame)
+        # Keep reference so broadcast messages can be rendered
+        self.current_discussion_view = discussion_view
         notebook.add(discussion_frame, text="Discussion")
     
     def _create_stream_tab(self, parent):
@@ -1620,6 +1622,35 @@ class TeacherDashboard:
         """Handle server messages"""
         msg_type = message.get("type")
         print(f"[DEBUG] _handle_server_message called: type={msg_type}, keys={message.keys()}")
+        # Real-time discussion message
+        if msg_type == 'MESSAGE':
+            msg = message.get('message', {})
+            class_id = msg.get('class_id')
+            sender = msg.get('sent_by') or 'Unknown'
+            content = msg.get('content') or ''
+            attachment = msg.get('attachment')
+            created = msg.get('created_at') or ''
+
+            display = content
+            if attachment:
+                name = attachment.get('name') if isinstance(attachment, dict) else str(attachment)
+                if display:
+                    display = f"{display}\n📎 Attachment: {name}"
+                else:
+                    display = f"📎 Attachment: {name}"
+            if created:
+                display = f"{display}\n\n[{created}]"
+
+            try:
+                if getattr(self, 'current_view', None) == 'class' and getattr(self, 'selected_class', None):
+                    sel_id = self.selected_class.get('_id') or self.selected_class.get('id')
+                    if sel_id and class_id and str(sel_id) == str(class_id):
+                        dv = getattr(self, 'current_discussion_view', None)
+                        if dv:
+                            dv._add_message(display, sender)
+                            return
+            except Exception:
+                pass
         
         if msg_type == "SUCCESS":
             if "classes" in message:

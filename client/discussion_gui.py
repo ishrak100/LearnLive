@@ -129,13 +129,82 @@ class DiscussionView:
         )
         self.send_button.pack(side=LEFT)
 
-        # Placeholder messages
-        self._add_message("Welcome to the discussion!", "System")
+        # Load messages from DB and render
+        self._load_messages()
 
     def _back_to_main(self):
         """Go back to main dashboard"""
         self.discussion_frame.pack_forget()
         self.dashboard.show_main_content()
+
+    def _clear_messages(self):
+        """Remove all message widgets from the messages frame."""
+        for w in list(self.messages_frame.winfo_children()):
+            w.destroy()
+
+    def _load_messages(self):
+        """Fetch messages for the current class and render them.
+
+        This calls the server-side handler directly (DiscussionHandler) which
+        accesses MongoDB. If no class is selected, nothing is fetched.
+        """
+        # Determine class_id
+        class_id = None
+        try:
+            class_data = getattr(self.dashboard, 'selected_class', None)
+            if class_data and isinstance(class_data, dict):
+                class_id = class_data.get('_id') or class_data.get('id')
+        except Exception:
+            class_id = None
+
+        # Clear existing messages (placeholder or stale)
+        self._clear_messages()
+
+        if not class_id:
+            # No class selected — show a friendly placeholder
+            self._add_message("Open a class to view discussion messages.", "System")
+            return
+
+        try:
+            # Import here to avoid client/server import at module load time
+            from server.discussion_handler import DiscussionHandler
+            handler = DiscussionHandler()
+            resp = handler.fetch_messages_handler({'class_id': class_id, 'limit': 200})
+            if resp.get('type') != 'SUCCESS':
+                self._add_message(f"Failed to load messages: {resp.get('error')}", "System")
+                return
+
+            messages = resp.get('messages', []) or []
+            # fetch_messages returns most-recent-first; show oldest-first
+            messages = list(reversed(messages))
+
+            if not messages:
+                self._add_message("No messages yet. Start the conversation!", "System")
+                return
+
+            for m in messages:
+                sender = m.get('sent_by') or 'Unknown'
+                content = m.get('content') or ''
+                attachment = m.get('attachment')
+                created = m.get('created_at') or ''
+
+                display = content
+                if attachment:
+                    # if attachment is stored as dict with name/path
+                    name = attachment.get('name') if isinstance(attachment, dict) else str(attachment)
+                    if display:
+                        display = f"{display}\n📎 Attachment: {name}"
+                    else:
+                        display = f"📎 Attachment: {name}"
+
+                # include timestamp if available
+                if created:
+                    display = f"{display}\n\n[{created}]"
+
+                self._add_message(display, sender)
+
+        except Exception as e:
+            self._add_message(f"Error loading messages: {e}", "System")
 
     def _send_message(self):
         """Send a message with optional attachment"""
@@ -146,19 +215,60 @@ class DiscussionView:
             return
         
         # Build message with attachment info if present
+        attachment_payload = None
         if self.attached_file:
             file_name = self.attached_file['name']
             file_path = self.attached_file['path']
+            attachment_payload = {'name': file_name, 'path': file_path}
             if message:
                 display_text = f"{message}\n📎 Attachment: {file_name}"
             else:
                 display_text = f"📎 Attachment: {file_name}"
-            self._add_message(display_text, "You")
-            self.attached_file = None
-            self.attachment_label.config(text="")
         else:
-            self._add_message(message, "You")
-        
+            display_text = message
+
+        # Show locally immediately
+        self._add_message(display_text, "You")
+
+        # Prepare data for DB handler
+        class_id = None
+        try:
+            class_data = getattr(self.dashboard, 'selected_class', None)
+            if class_data and isinstance(class_data, dict):
+                class_id = class_data.get('_id') or class_data.get('id')
+        except Exception:
+            class_id = None
+
+        sent_by = None
+        try:
+            sent_by = getattr(self.dashboard, 'user_data', {}).get('email') or getattr(self.dashboard, 'user_data', {}).get('_id')
+        except Exception:
+            sent_by = None
+
+        payload = {
+            'content': message if message else None,
+            'attachment': attachment_payload,
+            'class_id': class_id,
+            'sent_by': sent_by,
+            'reply': None
+        }
+
+        # Send to server via TCP so server will persist + broadcast
+        try:
+            client = getattr(self.dashboard, 'client', None)
+            if client and client.connected:
+                ok = client.send_message('POST_MESSAGE', payload)
+                if not ok:
+                    messagebox.showwarning('Warning', 'Failed to send message to server (socket error).')
+            else:
+                # Not connected — warn user but message remains local
+                messagebox.showwarning('Warning', 'Not connected to server; message shown locally only.')
+        except Exception as e:
+            messagebox.showwarning('Warning', f'Error sending message to server: {e}')
+
+        # Clear attachment and input
+        self.attached_file = None
+        self.attachment_label.config(text="")
         self.text_input.delete("1.0", tk.END)
 
     def _attach_file(self):

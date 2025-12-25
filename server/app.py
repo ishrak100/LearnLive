@@ -13,6 +13,7 @@ from config.config import *
 from server.database import Database
 from server.file_handler import FileHandler
 from server.notification import NotificationHandler
+from server.discussion_handler import DiscussionHandler
 
 
 class LearnLiveServer:
@@ -25,6 +26,9 @@ class LearnLiveServer:
         self.db = Database()
         self.file_handler = FileHandler()
         self.notifier = NotificationHandler(self.db)  # Pass database reference
+        # Discussion handler: use its own DiscussionDB implementation
+        # (passing the general Database instance caused missing `send_message` errors)
+        self.discussion = DiscussionHandler()
         self.running = False
         
         print(f"🎓 LearnLive Server Initializing...")
@@ -223,7 +227,7 @@ class LearnLiveServer:
             MSG_DOWNLOAD_FILE, MSG_REMOVE_STUDENT, MSG_DELETE_CLASS,
             MSG_VIEW_STUDENTS, MSG_UPLOAD_MATERIAL, MSG_VIEW_MATERIALS,
             MSG_GET_TEACHER_SUBMISSIONS, MSG_GET_STUDENT_ALL_ASSIGNMENTS, MSG_START_FILE_TRANSFER, 
-            MSG_FILE_CHUNK, MSG_END_FILE_TRANSFER
+            MSG_FILE_CHUNK, MSG_END_FILE_TRANSFER, MSG_POST_MESSAGE, MSG_GET_MESSAGES
         ]
         
         # Verify token if required
@@ -313,6 +317,36 @@ class LearnLiveServer:
         
         elif msg_type == MSG_GET_NOTIFICATIONS:
             return self.handle_get_notifications(data)
+
+        elif msg_type == MSG_POST_MESSAGE:
+            try:
+                return self.discussion.send_message_handler(data)
+            except AttributeError as e:
+                # Defensive: if the discussion handler was constructed with the
+                # generic Database lacking `send_message`, recreate a fresh
+                # DiscussionHandler that uses the dedicated DiscussionDB and retry.
+                err = str(e)
+                print(f"[WARN] Discussion handler AttributeError: {err} - recreating handler and retrying")
+                try:
+                    from server.discussion_handler import DiscussionHandler
+                    self.discussion = DiscussionHandler()
+                    return self.discussion.send_message_handler(data)
+                except Exception as e2:
+                    print(f"[ERROR] Failed to recover DiscussionHandler: {e2}")
+                    return {'type': RESP_ERROR, 'error': str(e2)}
+
+        elif msg_type == MSG_GET_MESSAGES:
+            try:
+                return self.discussion.fetch_messages_handler(data)
+            except AttributeError as e:
+                print(f"[WARN] Discussion handler AttributeError on fetch: {e} - recreating handler and retrying")
+                try:
+                    from server.discussion_handler import DiscussionHandler
+                    self.discussion = DiscussionHandler()
+                    return self.discussion.fetch_messages_handler(data)
+                except Exception as e2:
+                    print(f"[ERROR] Failed to recover DiscussionHandler for fetch: {e2}")
+                    return {'type': RESP_ERROR, 'error': str(e2)}
         
         else:
             return {'type': RESP_ERROR, 'error': 'Unknown message type'}
