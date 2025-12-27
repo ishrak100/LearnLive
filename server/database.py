@@ -3,6 +3,8 @@
 from pymongo import MongoClient
 from bson.objectid import ObjectId
 from datetime import datetime
+from gridfs import GridFS
+from bson import ObjectId
 import hashlib
 import secrets
 import sys
@@ -29,6 +31,8 @@ class Database:
             self.comments = self.db[COMMENTS_COLLECTION]
             self.materials = self.db[MATERIALS_COLLECTION]
             self.notifications = self.db['notifications']
+            from gridfs import GridFS
+            self.gridfs = GridFS(self.db)
             
             # Create indexes for performance
             self.users.create_index('email', unique=True)
@@ -288,38 +292,215 @@ class Database:
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
-    def submit_assignment(self, assignment_id, student_id, file_path, text_content=None):
-        """Submit an assignment"""
+    def submit_assignment(self, assignment_id, student_id, file_content=None, text_content=None, original_filename=None):
+        """Submit an assignment by storing the file in GridFS."""
         try:
+            file_id = None
+            if file_content:
+                 # Store the file content in GridFS with original filename
+                from gridfs import GridFS
+                fs = GridFS(self.db)
+                filename = original_filename if original_filename else "assignment_submission"
+                file_id = fs.put(file_content, filename=filename)  # Store file in GridFS
+
+            # Store the submission metadata in the database
             submission = {
                 'assignment_id': assignment_id,
                 'student_id': student_id,
-                'file_path': file_path,
-                'text_content': text_content,
+                'file_id': file_id,  # Store the file_id (not the content)
+                'original_filename': original_filename,
+                'text_content': text_content or '',  # Ensure text_content is not None
                 'submitted_at': datetime.now()
             }
+
+            # Insert the submission record into the database
             result = self.submissions.insert_one(submission)
             return {'success': True, 'submission_id': str(result.inserted_id)}
+
         except Exception as e:
             return {'success': False, 'error': str(e)}
+        
+
+    def submit_assignment_gridfs(self, assignment_id, user_id, file_content, submission_text, filename):
+        """Submit assignment using GridFS for file storage"""
+        try:
+            from bson import ObjectId
+            import gridfs
+            from datetime import datetime
+        
+            print(f"[DATABASE GRIDFS] Debug - Looking for assignment: {assignment_id}")
+        
+            # Verify assignment exists
+            assignment = self.db.assignments.find_one({"_id": ObjectId(assignment_id)})
+            if not assignment:
+                return {'success': False, 'error': 'Assignment not found'}
+        
+            print(f"[DATABASE GRIDFS] Assignment found: {assignment}")
+            print(f"[DATABASE GRIDFS] Assignment class_id: {assignment.get('class_id')}")
+        
+            # Get class_id from assignment
+            class_id = assignment.get('class_id')
+            if not class_id:
+                return {'success': False, 'error': 'Assignment has no class_id'}
+        
+            # First, try to find the class
+            class_data = None
+        
+            # Try 1: Direct match (if class_id is ObjectId string)
+            try:
+                class_data = self.db.classes.find_one({"_id": ObjectId(class_id)})
+                if class_data:
+                    print(f"[DATABASE GRIDFS] Found class by ObjectId(_id)")
+            except:
+                pass  # Not a valid ObjectId string
+        
+            # Try 2: If not found, maybe class_id is actually the class_code?
+                if not class_data:
+                  class_data = self.db.classes.find_one({"class_code": class_id})
+                if class_data:
+                    print(f"[DATABASE GRIDFS] Found class by class_code")
+        
+            # Try 3: Search in any string field
+                if not class_data:
+                # This is a fallback - search for class_id in any field
+                 all_classes = list(self.db.classes.find({}))
+                for cls in all_classes:
+                    # Check if class_id appears in any field
+                    for key, value in cls.items():
+                        if str(value) == str(class_id):
+                            class_data = cls
+                            print(f"[DATABASE GRIDFS] Found class by matching field '{key}'")
+                            break
+                    if class_data:
+                        break
+        
+            if not class_data:
+                # Debug: Print all classes to see what's available
+                all_classes = list(self.db.classes.find({}))
+                print(f"[DATABASE GRIDFS DEBUG] All classes: {all_classes}")
+                return {'success': False, 'error': f'Class not found. Assignment class_id: {class_id}'}
+        
+            print(f"[DATABASE GRIDFS] Class found: {class_data.get('class_name')}")
+        
+        # Check if user is enrolled
+            student_ids = [str(sid) for sid in class_data.get("students", [])]
+        
+            if user_id not in student_ids:
+                return {'success': False, 'error': 'You are not enrolled in this class'}
+        
+            # Store in GridFS
+            fs = gridfs.GridFS(self.db)
+        
+            file_id = fs.put(
+                file_content,
+                filename=filename,
+                assignment_id=ObjectId(assignment_id),
+                student_id=ObjectId(user_id),
+                class_id=str(class_data["_id"]),  # Store the actual class _id
+                upload_date=datetime.utcnow(),
+                content_type="application/octet-stream"
+            )
+         
+        # Create submission record
+            submission_data = {
+                "assignment_id": ObjectId(assignment_id),
+                "student_id": ObjectId(user_id),
+                "class_id": str(class_data["_id"]),  # Store actual class _id
+                "file_id": file_id,
+                "filename": filename,
+                "submission_text": submission_text,
+                "submitted_at": datetime.utcnow(),
+                "status": "submitted"
+            }
+        
+            result = self.db.submissions.insert_one(submission_data)
+        
+            return {
+                'success': True,
+                'submission_id': str(result.inserted_id),
+                'file_id': str(file_id)
+            }
+        
+        except Exception as e:
+            print(f"[DATABASE GRIDFS ERROR] {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'error': f'Submission failed: {str(e)}'}
+
+
+
     
     def get_submissions(self, assignment_id):
-        """Get all submissions for an assignment"""
+        """Get all submissions for an assignment - handles both string and ObjectId"""
         try:
-            submissions = list(self.submissions.find({'assignment_id': assignment_id}))
-            for s in submissions:
-                s['_id'] = str(s['_id'])
-                # Convert datetime to string for JSON serialization
-                if 'submitted_at' in s and s['submitted_at']:
-                    s['submitted_at'] = s['submitted_at'].isoformat()
+            from bson.objectid import ObjectId
+            from bson.errors import InvalidId
+        
+            print(f"[DATABASE DEBUG] Querying submissions for assignment_id: {assignment_id}")
+        
+            # Try to convert to ObjectId, but also try string match
+            submissions = []
+        
+            try:
+                # Try as ObjectId first
+                assignment_obj_id = ObjectId(assignment_id)
+                submissions = list(self.submissions.find({'assignment_id': assignment_obj_id}))
+                print(f"[DATABASE DEBUG] Found {len(submissions)} submissions with ObjectId match")
+            except InvalidId:
+            # assignment_id is not a valid ObjectId, try as string
+                submissions = list(self.submissions.find({'assignment_id': assignment_id}))
+                print(f"[DATABASE DEBUG] Found {len(submissions)} submissions with string match")
+            except Exception as e:
+                print(f"[DATABASE DEBUG] Error querying: {e}")
+        
+            # Get student names and enrich submission data
+            for submission in submissions:
+                # Convert ObjectId to string
+                submission['_id'] = str(submission['_id'])
+            
+                # Convert assignment_id to string (if it's ObjectId)
+                if 'assignment_id' in submission and isinstance(submission['assignment_id'], ObjectId):
+                    submission['assignment_id'] = str(submission['assignment_id'])
+            
+                # Convert student_id to string
+                if 'student_id' in submission:
+                    submission['student_id'] = str(submission['student_id'])
+            
+                # Convert file_id to string if it exists
+                if submission.get('file_id'):
+                    submission['file_id'] = str(submission['file_id'])
+            
+                # Convert datetime to string
+                if 'submitted_at' in submission and submission['submitted_at']:
+                    submission['submitted_at'] = submission['submitted_at'].isoformat()
+            
                 # Get student name
-                from bson.objectid import ObjectId
-                user = self.users.find_one({'_id': ObjectId(s['student_id'])})
-                if user:
-                    s['student_name'] = user['name']
+                student_id = submission.get('student_id')
+                if student_id:
+                    try:
+                        student = self.users.find_one({'_id': ObjectId(student_id)})
+                        if student:
+                            submission['student_name'] = student.get('name', 'Unknown')
+                            submission['student_email'] = student.get('email', '')
+                        else:
+                           submission['student_name'] = 'Unknown'
+                           submission['student_email'] = ''
+                    except:
+                        submission['student_name'] = 'Unknown'
+                        submission['student_email'] = ''
+                else:
+                    submission['student_name'] = 'Unknown'
+                    submission['student_email'] = ''
+        
+            print(f"[DATABASE DEBUG] Returning {len(submissions)} enriched submissions")
             return {'success': True, 'submissions': submissions}
+        
         except Exception as e:
+            print(f"[DATABASE ERROR] get_submissions failed: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'error': str(e)}
+        
     
     def get_student_submission(self, assignment_id, student_id):
         """Get a specific student's submission for an assignment"""
@@ -528,32 +709,89 @@ class Database:
     
     # ========== MATERIAL OPERATIONS ==========
     
-    def upload_material(self, class_id, teacher_id, title, material_type, file_path):
-        """Upload class material"""
-        try:
-            material = {
-                'class_id': class_id,
-                'teacher_id': teacher_id,
-                'title': title,
-                'material_type': material_type,
-                'file_path': file_path,
-                'uploaded_at': datetime.now()
-            }
-            result = self.materials.insert_one(material)
-            return {'success': True, 'material_id': str(result.inserted_id)}
-        except Exception as e:
-            return {'success': False, 'error': str(e)}
+   
+
+    
+    
+    def upload_material(self, class_id, teacher_id, title, material_type, file_content):
+       """Upload class material using GridFS to store the file"""
+       try:
+           # Use GridFS to store the file content
+           fs = GridFS(self.db)
+           file_id = fs.put(file_content, filename=title)  # Store the file content in GridFS
+
+           # Create the material document with file_id (instead of file_path)
+           material = {
+               'class_id': class_id,
+               'teacher_id': teacher_id,
+               'title': title,
+               'material_type': material_type,
+               'file_id': file_id,  # Store the file_id from GridFS
+               'uploaded_at': datetime.now()
+           }
+           result = self.materials.insert_one(material)  # Insert the material record into the DB
+           return {'success': True, 'material_id': str(result.inserted_id)}
+
+       except Exception as e:
+        return {'success': False, 'error': str(e)}
+
     
     def get_materials(self, class_id):
-        """Get all materials for a class"""
+        """Get all materials for a class - GridFS ONLY version"""
         try:
+            from bson.objectid import ObjectId
+            import datetime
+        
+            # Convert string to ObjectId if needed
+            if isinstance(class_id, str):
+               class_id = ObjectId(class_id)
+        
             materials = list(self.materials.find({'class_id': class_id}).sort('uploaded_at', -1))
+        
+            serializable_materials = []
+        
             for m in materials:
-                m['_id'] = str(m['_id'])
-                # Convert datetime to string for JSON serialization
-                if 'uploaded_at' in m and m['uploaded_at']:
-                    m['uploaded_at'] = m['uploaded_at'].strftime('%Y-%m-%d %H:%M:%S')
-            return {'success': True, 'materials': materials}
+              # Start with an empty dict for serializable data
+                material_data = {}
+            
+                # Convert ALL fields to JSON-serializable format
+                for key, value in m.items():
+                    if isinstance(value, ObjectId):
+                       material_data[key] = str(value)
+                    elif isinstance(value, datetime.datetime):
+                        material_data[key] = value.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                       material_data[key] = value  # Already serializable (str, int, bool, etc.)
+            
+               # Get teacher name
+                if 'teacher_id' in material_data:
+                    teacher_id_str = material_data['teacher_id']
+                    try:
+                        teacher = self.users.find_one({'_id': ObjectId(teacher_id_str)})
+                        if teacher:
+                            material_data['teacher_name'] = teacher.get('name', 'Unknown Teacher')
+                    except:
+                        material_data['teacher_name'] = 'Unknown Teacher'
+            
+                # Get file info from GridFS (if file_id exists)
+                if 'file_id' in material_data and material_data['file_id']:
+                    file_id_str = material_data['file_id']
+                    try:
+                        if hasattr(self, 'gridfs') and self.gridfs:
+                            gridfs_file = self.gridfs.get(ObjectId(file_id_str))
+                            if gridfs_file:
+                                # Add filename if missing
+                                if 'filename' not in material_data or not material_data['filename']:
+                                    material_data['filename'] = gridfs_file.filename
+                                # Add content type if missing
+                                if 'content_type' not in material_data:
+                                   material_data['content_type'] = gridfs_file.content_type
+                    except Exception as e:
+                        print(f"[DATABASE] Could not get GridFS info for {file_id_str}: {e}")
+             
+                serializable_materials.append(material_data)
+        
+            return {'success': True, 'materials': serializable_materials}
         except Exception as e:
             return {'success': False, 'error': str(e)}
     
@@ -631,3 +869,125 @@ class Database:
             return {'success': True}
         except Exception as e:
             return {'success': False, 'error': str(e)}
+        
+        
+    def download_material_from_server(self, file_id):
+        """Download a file from GridFS"""
+        try:
+            from gridfs import GridFS
+            from bson.objectid import ObjectId
+        
+            fs = GridFS(self.db)
+        
+            # Get file from GridFS
+            grid_out = fs.get(ObjectId(file_id))
+        
+            # Read file content
+            file_content = grid_out.read()
+        
+        # Get filename - use what's stored in GridFS
+            filename = grid_out.filename
+        
+        # If filename is generic, try to get original filename from submission
+            if filename == "assignment_submission":
+            # Find submission with this file_id
+                submission = self.submissions.find_one({'file_id': file_id})
+                if submission and submission.get('original_filename'):
+                    filename = submission['original_filename']
+        
+            return {
+                'success': True,
+                'file_content': file_content,
+                'filename': filename,
+                'content_type': grid_out.content_type,
+                'size': grid_out.length
+            }
+        except Exception as e:
+            return {'success': False, 'error': str(e)}
+        
+
+    def download_material_gridfs(self, file_id):
+        """Download material from GridFS - returns raw binary"""
+        try:
+            from bson import ObjectId
+            import gridfs
+        
+            fs = gridfs.GridFS(self.db)
+        
+            # Get file from GridFS
+            grid_file = fs.get(ObjectId(file_id))
+            file_content = grid_file.read()  # RAW binary
+        
+            # Get file metadata
+            filename = grid_file.filename
+            content_type = grid_file.content_type or 'application/octet-stream'
+            upload_date = grid_file.upload_date
+        
+            print(f"[DATABASE GRIDFS] Retrieved {len(file_content)} bytes of raw binary")
+        
+            return {
+                'success': True,
+                'file_content': file_content,  # RAW BINARY
+                'filename': filename,
+                'content_type': content_type,
+                'size': len(file_content),
+                'upload_date': upload_date.isoformat() if upload_date else None
+            }
+        
+        except gridfs.NoFile:
+            return {'success': False, 'error': 'File not found in GridFS'}
+        except Exception as e:
+            print(f"[DATABASE GRIDFS DOWNLOAD ERROR] {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'error': f'Download failed: {str(e)}'}
+        
+    def upload_material_gridfs(self, class_id, teacher_id, title, material_type, file_content, filename=None):
+        """Upload material to GridFS - SIMPLIFIED VERSION WITHOUT NOTIFICATIONS"""
+        try:
+            from bson.objectid import ObjectId
+            import datetime
+        
+            print(f"[DATABASE MATERIAL GRIDFS] Uploading material to class {class_id}")
+        
+            # Generate filename if not provided
+            if not filename:
+               filename = f"material_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.bin"
+        
+            # Store file in GridFS
+            file_id = self.gridfs.put(
+                file_content,
+                filename=filename,
+                content_type='application/octet-stream'
+            )
+        
+            print(f"[DATABASE MATERIAL GRIDFS] File stored in GridFS: {file_id}")
+        
+            # Create material document
+            material_doc = {
+                'class_id': ObjectId(class_id) if isinstance(class_id, str) else class_id,
+                'teacher_id': ObjectId(teacher_id) if isinstance(teacher_id, str) else teacher_id,
+                'title': title,
+                'material_type': material_type,
+                'file_id': file_id,
+               'filename': filename,
+               'uploaded_at': datetime.datetime.now()
+            }
+        
+           # Insert into materials collection
+            result = self.materials.insert_one(material_doc)
+        
+            print(f"[DATABASE MATERIAL GRIDFS] Material document created: {result.inserted_id}")
+        
+            return {
+               'success': True,
+               'material_id': str(result.inserted_id),
+               'file_id': str(file_id),
+               'filename': filename
+           }
+        
+        except Exception as e:
+           print(f"[DATABASE MATERIAL GRIDFS ERROR] {e}")
+           import traceback
+           traceback.print_exc()
+           return {'success': False, 'error': str(e)}

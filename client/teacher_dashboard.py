@@ -1,6 +1,7 @@
+from unittest import result
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
-from tkinter import messagebox, Canvas, simpledialog, Toplevel, Text, StringVar
+from tkinter import dialog, messagebox, Canvas, simpledialog, Toplevel, Text, StringVar
 import os
 import sys
 
@@ -38,6 +39,8 @@ class TeacherDashboard:
         self.submissions_dialog = None  # Track submissions dialog
         self.pending_submissions = []  # Store submissions data
         self.current_expand_view = None  # Track current expanded view for comments
+        self.current_download_submission = None
+        self.current_open_submission = None
         
         self.client.set_message_callback(self._handle_server_message)
     
@@ -345,35 +348,49 @@ class TeacherDashboard:
         return card
     
     def _download_submission(self, submission):
-        """Download a submission file"""
-        from tkinter import filedialog
-        
-        file_path = submission.get('file_path')
-        if not file_path:
+        """Download a submission file from GridFS using raw binary"""
+        file_id = submission.get('file_id')
+    
+        if not file_id:
             messagebox.showerror("Error", "No file attached to this submission")
             return
+    
+        try:
+            # Use the new binary download method
+            result = self.client.download_file_binary(file_id)
         
-        # Ask where to save
-        filename = os.path.basename(file_path)
-        save_path = filedialog.asksaveasfilename(
-            defaultextension=os.path.splitext(filename)[1],
-            initialfile=filename,
-            title="Save Submission As"
-        )
-        
-        if not save_path:
-            return
-        
-        # Store save path for when response arrives
-        self.pending_download = {
-            'save_path': save_path,
-            'file_path': file_path
-        }
-        
-        # Request file download from server (response will come via callback)
-        self.client.send_message('DOWNLOAD_FILE', {
-            'file_path': file_path
-        })
+            if result.get('success'):
+                binary_data = result.get('binary_data')
+                filename = result.get('filename', f"submission_{file_id[:8]}.bin")
+            
+                # Ask user where to save
+                from tkinter import filedialog
+                save_path = filedialog.asksaveasfilename(
+                    defaultextension="",
+                    initialfile=filename,
+                    filetypes=[("All Files", "*.*")]
+                )
+            
+                if save_path:
+                    # Write raw binary to file
+                    with open(save_path, 'wb') as f:
+                        f.write(binary_data)
+                
+                    messagebox.showinfo(
+                        "Success", 
+                        f"Submission downloaded!\n\n"
+                        f"File: {filename}\n"
+                        f"Size: {len(binary_data)} bytes\n"
+                        f"Saved to: {save_path}"
+                    )
+                else:
+                    messagebox.showinfo("Cancelled", "Download cancelled")
+            else:
+                messagebox.showerror("Error", f"Failed to download: {result.get('error')}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Download error: {str(e)}")
+
     
     def _show_home_page(self):
         """Show home page"""
@@ -660,25 +677,18 @@ class TeacherDashboard:
     def _update_stream_display(self):
         """Update the stream display with announcements"""
         print(f"[DEBUG] _update_stream_display called, announcements count: {len(self.announcements)}")
-        
-        if not hasattr(self, 'stream_container'):
-            print("[DEBUG] No stream_container attribute")
+    
+        # SIMPLE FIX: Check if stream_container exists before using it
+        if not hasattr(self, 'stream_container') or not self.stream_container.winfo_exists():
+            print("[DEBUG] stream_container doesn't exist or was destroyed, skipping update")
             return
-        
-        try:
-            # Check if the widget still exists
-            exists = self.stream_container.winfo_exists()
-            print(f"[DEBUG] stream_container exists: {exists}")
-        except Exception as e:
-            print(f"[DEBUG] Error checking widget existence: {e}")
-            return
-        
+    
         # Clear existing widgets
         for widget in self.stream_container.winfo_children():
-            widget.destroy()
-        
+           widget.destroy()
+    
         print(f"[DEBUG] Cleared old widgets, creating new ones for {len(self.announcements)} announcements")
-        
+    
         if not self.announcements:
             ttk.Label(
                 self.stream_container,
@@ -688,13 +698,13 @@ class TeacherDashboard:
             ).pack(padx=20, pady=20)
             print("[DEBUG] Displayed 'No announcements' message")
             return
-        
+    
         # Display announcements
         for idx, announcement in enumerate(self.announcements):
             print(f"[DEBUG] Creating widget for announcement {idx}: {announcement.get('title')}")
             frame = ttk.Frame(self.stream_container, bootstyle="secondary", padding=15)
             frame.pack(fill=X, padx=20, pady=10)
-            
+        
             # Title
             ttk.Label(
                 frame,
@@ -702,7 +712,7 @@ class TeacherDashboard:
                 font=("Arial", 14, "bold"),
                 bootstyle="inverse-light"
             ).pack(anchor=W, pady=(0, 5))
-            
+        
             # Content
             ttk.Label(
                 frame,
@@ -711,7 +721,7 @@ class TeacherDashboard:
                 bootstyle="inverse-secondary",
                 wraplength=700
             ).pack(anchor=W, pady=(0, 5))
-            
+        
             # Date
             date_str = announcement.get('created_at', '')
             if date_str:
@@ -721,14 +731,14 @@ class TeacherDashboard:
                     formatted_date = date_obj.strftime('%B %d, %Y at %I:%M %p')
                 except:
                     formatted_date = date_str
-                
+            
                 ttk.Label(
                     frame,
                     text=formatted_date,
                     font=("Arial", 9),
                     bootstyle="inverse-secondary"
                 ).pack(anchor=W)
-            
+        
             # Expand button
             ttk.Button(
                 frame,
@@ -736,7 +746,7 @@ class TeacherDashboard:
                 command=lambda ann=announcement: self.show_expanded_view('announcement', {**ann, 'class_id': self.selected_class['_id']}),
                 bootstyle="outline-secondary"
             ).pack(anchor=E, pady=(5, 0))
-        
+    
         # Update canvas scroll region after adding content
         if hasattr(self, 'stream_canvas'):
             try:
@@ -806,14 +816,14 @@ class TeacherDashboard:
             self.client.view_materials(self.selected_class['_id'])
     
     def _display_materials(self):
-        """Display materials in classwork tab"""
+        """Display materials in classwork tab - GridFS ONLY"""
         if not self.materials_container:
             return
-        
+    
         # Clear existing widgets
         for widget in self.materials_container.winfo_children():
             widget.destroy()
-        
+    
         if not self.materials:
             ttk.Label(
                 self.materials_container,
@@ -822,98 +832,133 @@ class TeacherDashboard:
                 bootstyle="inverse-secondary"
             ).pack(padx=20, pady=20)
             return
-        
+    
         # Create scrollable frame
         from tkinter import Canvas, Scrollbar
         canvas = Canvas(self.materials_container, bg='#222222', highlightthickness=0)
         scrollbar = Scrollbar(self.materials_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas, bootstyle="dark")
-        
+    
         scrollable_frame.bind(
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-        
+    
         window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         canvas.bind(
-         "<Configure>",
-        lambda e: canvas.itemconfig(window_id, width=e.width)
+            "<Configure>",
+            lambda e: canvas.itemconfig(window_id, width=e.width)
         )
 
         canvas.pack(side=LEFT, fill=BOTH, expand=YES)
         scrollbar.pack(side=RIGHT, fill=Y)
-        
+    
         # Display each material
-        for material in self.materials:
+        for idx, material in enumerate(self.materials):
+            # Skip materials without file_id (invalid)
+            file_id = material.get('file_id') or material.get('file_id_str')
+            if not file_id:
+                continue
+            
             material_frame = ttk.Frame(scrollable_frame, bootstyle="dark")
             material_frame.pack(fill=X, padx=10, pady=5)
-            
+        
             # Material card
             card = ttk.Frame(material_frame, bootstyle="secondary", relief="raised")
             card.pack(fill=X, padx=5, pady=5)
-            
+        
             # Material info
             info_frame = ttk.Frame(card, bootstyle="secondary")
             info_frame.pack(fill=X, padx=15, pady=10)
-            
-            # Title and type
+        
+                # Title and type
             title_text = material.get('title', 'Untitled')
             mat_type = material.get('material_type', 'Document')
-            
-            # Header with title and open button
+            filename = material.get('filename', 'Material file')
+            uploaded_at = material.get('uploaded_at', '')
+            teacher_name = material.get('teacher_name', '')
+        
+                # Header with title
             header_frame = ttk.Frame(info_frame, bootstyle="secondary")
             header_frame.pack(fill=X, anchor=W)
-            
+        
             ttk.Label(
                 header_frame,
                 text=f"📎 {title_text}",
                 font=("Arial", 12, "bold"),
                 bootstyle="inverse-secondary"
             ).pack(side=LEFT)
-            
-            # Open button
-            file_path = material.get('file_path', '')
-            if file_path:
-                def open_material(path=file_path):
-                    import os
-                    if os.path.exists(path):
-                        try:
-                            # Use os.startfile for Windows
-                            os.startfile(path)
-                        except Exception as e:
-                            messagebox.showerror("Error", f"Could not open file: {str(e)}")
+        
+                # Create a closure factory to capture current values
+            def create_download_handler(fid, fname, mtype, title):
+                def handler():
+                    """Download GridFS material"""
+                    from tkinter import messagebox, filedialog
+                    
+                    result = self.client.download_file_binary(fid)
+                    
+                    if result.get('success'):
+                        binary_data = result.get('binary_data')
+                        filename = result.get('filename', fname)
+                        
+                        # Ask where to save
+                        save_path = filedialog.asksaveasfilename(
+                            defaultextension="",
+                            initialfile=filename,
+                            filetypes=[("All Files", "*.*")]
+                        )
+                        
+                        if save_path:
+                            try:
+                                with open(save_path, 'wb') as f:
+                                    f.write(binary_data)
+                                messagebox.showinfo("Success", 
+                                    f"Material downloaded!\n\n"
+                                    f"📄 {filename}\n"
+                                    f"📦 {len(binary_data):,} bytes\n"
+                                    f"📁 {save_path}"
+                                )
+                            except Exception as e:
+                                messagebox.showerror("Error", f"Save failed: {str(e)}")
                     else:
-                        messagebox.showerror("Error", "File not found")
-                
-                ttk.Button(
-                    header_frame,
-                    text="Open",
-                    bootstyle="info-outline",
-                    command=open_material,
-                    width=8
+                        messagebox.showerror("Error", f"Download failed: {result.get('error')}")
+                return handler
+        
+                    # Create handler with current material's values
+            download_handler = create_download_handler(
+                fid=file_id,
+                fname=filename,
+                mtype=mat_type,
+                title=title_text
+                )
+        
+                # Download button
+            ttk.Button(
+                header_frame,
+                text="⬇️ Download",
+                bootstyle="info-outline",
+                command=download_handler,
+                width=12
                 ).pack(side=RIGHT, padx=(10, 0))
-            
+        
+            # Material type
             ttk.Label(
                 info_frame,
                 text=f"Type: {mat_type}",
                 font=("Arial", 10),
                 bootstyle="inverse-secondary"
             ).pack(anchor=W, pady=(5, 0))
-            
-            # File path
-            if file_path:
-                import os
-                file_name = os.path.basename(file_path)
-                ttk.Label(
-                    info_frame,
-                    text=f"File: {file_name}",
-                    font=("Arial", 10),
-                    bootstyle="inverse-secondary"
-                ).pack(anchor=W, pady=(2, 0))
-            
+        
+            # File info
+            ttk.Label(
+                info_frame,
+                text=f"File: {filename}",
+                font=("Arial", 10),
+                bootstyle="inverse-secondary"
+            ).pack(anchor=W, pady=(2, 0))
+        
             # Upload date
-            uploaded_at = material.get('uploaded_at', '')
             if uploaded_at:
                 ttk.Label(
                     info_frame,
@@ -921,14 +966,35 @@ class TeacherDashboard:
                     font=("Arial", 9),
                     bootstyle="inverse-secondary"
                 ).pack(anchor=W, pady=(2, 0))
-            
+        
+            # Teacher name (if available)
+            if teacher_name:
+                ttk.Label(
+                    info_frame,
+                    text=f"By: {teacher_name}",
+                    font=("Arial", 9, "italic"),
+                    bootstyle="inverse-secondary"
+                ).pack(anchor=W, pady=(2, 0))
+        
+            # Create expand handler with captured material
+            def create_expand_handler(mat):
+                def handler():
+                    self.show_expanded_view('material', {
+                        **mat, 
+                        'class_id': self.selected_class['_id']
+                    })
+                return handler
+        
+            expand_handler = create_expand_handler(material)
+        
             # Expand button
             ttk.Button(
                 info_frame,
                 text="🔍 Expand",
-                command=lambda mat=material: self.show_expanded_view('material', {**mat, 'class_id': self.selected_class['_id']}),
+                command=expand_handler,
                 bootstyle="outline-secondary"
             ).pack(pady=(5, 0))
+
     
     def _display_assignments(self):
         """Display assignments in assignments tab"""
@@ -1464,18 +1530,18 @@ class TeacherDashboard:
         cancel_btn.pack(side=RIGHT)
     
     def _upload_material_dialog(self):
-        """Show upload material dialog"""
+        """Show upload material dialog for GridFS"""
         if not self.selected_class:
             return
-        
+
         dialog = Toplevel(self.window)
         dialog.title("Upload Material")
         dialog.geometry("600x400")
         dialog.configure(bg='#222222')
-        
+
         frame = ttk.Frame(dialog, padding=20, bootstyle="dark")
         frame.pack(fill=BOTH, expand=YES)
-        
+
         # Title
         ttk.Label(
             frame,
@@ -1483,12 +1549,12 @@ class TeacherDashboard:
             font=("Arial", 16, "bold"),
             bootstyle="inverse-dark"
         ).pack(pady=(0, 20))
-        
+
         # Material Name
         ttk.Label(frame, text="Material Name:", font=("Arial", 11), bootstyle="inverse-dark").pack(anchor=W, pady=(0, 5))
         name_entry = ttk.Entry(frame, font=("Arial", 11), width=50)
         name_entry.pack(fill=X, pady=(0, 15))
-        
+
         # Material Type
         ttk.Label(frame, text="Material Type:", font=("Arial", 11), bootstyle="inverse-dark").pack(anchor=W, pady=(0, 5))
         type_var = StringVar(value="Document")
@@ -1501,16 +1567,15 @@ class TeacherDashboard:
             width=48
         )
         type_combo.pack(fill=X, pady=(0, 15))
-        
-        # File Path
+
+        # File Path (binary data handling)
         ttk.Label(frame, text="File Path:", font=("Arial", 11), bootstyle="inverse-dark").pack(anchor=W, pady=(0, 5))
-        
         file_frame = ttk.Frame(frame, bootstyle="dark")
         file_frame.pack(fill=X, pady=(0, 15))
-        
+
         file_entry = ttk.Entry(file_frame, font=("Arial", 11))
         file_entry.pack(side=LEFT, fill=X, expand=YES, padx=(0, 10))
-        
+
         def browse_file():
             from tkinter import filedialog
             filename = filedialog.askopenfilename(
@@ -1520,48 +1585,85 @@ class TeacherDashboard:
             if filename:
                 file_entry.delete(0, END)
                 file_entry.insert(0, filename)
-        
+
         ttk.Button(
             file_frame,
             text="Browse",
             bootstyle="info",
             command=browse_file
         ).pack(side=RIGHT)
-        
+
         def upload_material():
             material_name = name_entry.get().strip()
             material_type = type_var.get()
             file_path = file_entry.get().strip()
-            
+
             if not material_name:
                 messagebox.showerror("Error", "Material name is required")
                 return
-            
+
             if not file_path:
                 messagebox.showerror("Error", "File path is required")
                 return
-            
-            # Check if file exists
-            import os
-            if not os.path.exists(file_path):
-                messagebox.showerror("Error", "File does not exist")
+
+            # Read file content as binary data
+            try:
+                with open(file_path, "rb") as f:
+                    file_content = f.read()
+            except Exception as e:
+                messagebox.showerror("Error", f"Could not read file: {str(e)}")
                 return
+
+            # Get filename from path
+            import os
+            filename = os.path.basename(file_path)
             
-            # Store dialog reference for response handling
-            self.upload_dialog = dialog
-            
-            # Send to server (response will come via callback)
-            self.client.upload_material(
-                self.selected_class['_id'],
-                material_name,
-                material_type,
-                file_path
+            # Get teacher ID from user data (handle different key names)
+            teacher_id = self.user_data.get('user_id') or self.user_data.get('_id')
+            if not teacher_id:
+                messagebox.showerror("Error", "Teacher ID not found in user data")
+                return
+
+            # Show uploading message
+            uploading_label = ttk.Label(
+                dialog,
+                text="⏳ Uploading material...",
+                font=("Arial", 10, "italic"),
+                bootstyle="info"
             )
-        
+            uploading_label.pack(pady=10)
+            dialog.update()
+            
+            # Send the file using GridFS upload
+            result = self.client.upload_material_gridfs(
+                class_id=self.selected_class['_id'],
+                teacher_id=teacher_id,
+                title=material_name,
+                material_type=material_type,
+                file_content=file_content,
+                filename=filename
+            )
+            
+            # Remove uploading message
+            uploading_label.destroy()
+            
+            # Check result
+            if result.get('type') == 'ERROR':
+                messagebox.showerror("Upload Failed", result.get('error', 'Unknown error'))
+            elif result.get('success'):
+                messagebox.showinfo("Success", "Material uploaded successfully!")
+                dialog.destroy()
+                
+                # Refresh materials display
+                if hasattr(self, 'materials_container'):
+                    self._display_materials()
+            else:
+                messagebox.showerror("Upload Failed", "Unknown error occurred")
+
         # Buttons
         btn_frame = ttk.Frame(frame, bootstyle="dark")
         btn_frame.pack(fill=X, pady=(10, 0))
-        
+
         upload_btn = ttk.Button(
             btn_frame,
             text="Upload",
@@ -1569,8 +1671,8 @@ class TeacherDashboard:
             command=upload_material,
             width=15
         )
-        upload_btn.pack(side=LEFT)
-        
+        upload_btn.pack(side=LEFT, padx=(0, 10))
+
         cancel_btn = ttk.Button(
             btn_frame,
             text="Cancel",
@@ -1578,7 +1680,21 @@ class TeacherDashboard:
             command=dialog.destroy,
             width=15
         )
-        cancel_btn.pack(side=RIGHT)
+        cancel_btn.pack(side=LEFT)
+
+        # Center the dialog
+        dialog.update_idletasks()
+        width = dialog.winfo_width()
+        height = dialog.winfo_height()
+        x = (dialog.winfo_screenwidth() // 2) - (width // 2)
+        y = (dialog.winfo_screenheight() // 2) - (height // 2)
+        dialog.geometry(f'{width}x{height}+{x}+{y}')
+        
+        # Focus on name field
+        name_entry.focus_set()
+
+
+
     
     def _on_search_focus_in(self, event):
         """Handle search entry focus in"""
@@ -1623,6 +1739,24 @@ class TeacherDashboard:
         msg_type = message.get("type")
         print(f"[DEBUG] _handle_server_message called: type={msg_type}, keys={message.keys()}")
         # Real-time discussion message
+        if msg_type == 'FILE_DOWNLOAD_COMPLETE':
+            print(f"[DEBUG] File download complete: {message.get('filename')}")
+        
+            binary_data = message.get('binary_data')
+            filename = message.get('filename')
+            request_id = message.get('request_id')
+        
+            if binary_data and filename:
+                # Check if we want to open or save
+                if hasattr(self, f'want_to_open_{request_id}'):
+                    # Open the file
+                    delattr(self, f'want_to_open_{request_id}')
+                    self._open_downloaded_file(filename, binary_data, request_id)
+                else:
+                    # Save the file
+                    self._save_downloaded_file(filename, binary_data, request_id)
+            return
+        
         if msg_type == 'MESSAGE':
             msg = message.get('message', {})
             class_id = msg.get('class_id')
@@ -1726,8 +1860,63 @@ class TeacherDashboard:
                         self.window.after(0, self._display_materials)
                     except Exception as e:
                         print(f"[DEBUG] Error displaying materials: {e}")
-                else:
-                    print(f"[DEBUG] materials_container not available yet")
+            elif "file_content" in message:
+                # Handle DOWNLOAD_FILE response
+                print(f"[DEBUG TEACHER] Received file download response")
+            
+                import base64
+                from tkinter import filedialog, messagebox
+                import tempfile
+                import os
+                import subprocess
+            
+                try:
+                    # Decode base64 file content
+                    file_content = base64.b64decode(message['file_content'])
+                    filename = message.get('filename', 'submission.bin')
+                
+                    # Check if we want to open or save
+                    if hasattr(self, 'current_open_submission') and self.current_open_submission:
+                        # OPEN THE FILE
+                        # Create temp file
+                        temp_dir = tempfile.gettempdir()
+                        temp_path = os.path.join(temp_dir, filename)
+                    
+                        # Save to temp file
+                        with open(temp_path, 'wb') as f:
+                            f.write(file_content)
+                    
+                        # Open file with default application
+                        if os.name == 'nt':  # Windows
+                            os.startfile(temp_path)
+                        elif os.name == 'posix':  # macOS, Linux
+                            subprocess.run(['open', temp_path] if sys.platform == 'darwin' else ['xdg-open', temp_path])
+                    
+                        messagebox.showinfo("Success", "File opened")
+                        self.current_open_submission = None
+                    
+                    else:
+                        # SAVE THE FILE
+                        # Ask user where to save
+                        save_path = filedialog.asksaveasfilename(
+                            initialfile=filename,
+                            title="Save Submission File",
+                            filetypes=[("All files", "*.*")]
+                        )
+                    
+                        if save_path:
+                            # Save file
+                            with open(save_path, 'wb') as f:
+                                f.write(file_content)
+                        
+                            messagebox.showinfo("Success", f"File saved to:\n{save_path}")
+                    
+                        if hasattr(self, 'current_download_submission'):
+                            self.current_download_submission = None
+                        
+                except Exception as e:
+                    messagebox.showerror("Error", f"File operation failed: {str(e)}")
+                
             elif "submissions" in message:
                 # Handle submissions response - could be for To-Get page or dialog
                 submissions = message.get("submissions", [])
@@ -1759,6 +1948,82 @@ class TeacherDashboard:
                     else:
                         messagebox.showerror("Error", "No file data received")
                     delattr(self, 'pending_download')
+
+            elif "file_content" in message:
+                # Handle DOWNLOAD_FILE response
+                print(f"[DEBUG TEACHER] Received file download response")
+            
+                import binascii  # For hex decoding
+                from tkinter import filedialog, messagebox
+                import tempfile
+                import os
+                import subprocess
+            
+                try:
+                    # DECODE HEX (not base64!)
+                    file_content = binascii.unhexlify(message['file_content'])
+                    filename = message.get('filename', 'submission.bin')
+                
+                    # Ensure file has proper extension
+                    if '.' not in filename:
+                        # Add .bin extension if no extension
+                        filename = filename + '.bin'
+                
+                    print(f"[DEBUG TEACHER] Decoded file size: {len(file_content)} bytes")
+                    print(f"[DEBUG TEACHER] Filename: {filename}")
+                
+                    # Check if we want to open or save
+                    if hasattr(self, 'current_open_submission') and self.current_open_submission:
+                        # OPEN THE FILE
+                        # Create temp file with proper extension
+                       temp_dir = tempfile.gettempdir()
+                       temp_path = os.path.join(temp_dir, filename)
+                    
+                        # Save to temp file
+                    with open(temp_path, 'wb') as f:
+                            f.write(file_content)
+                            print(f"[DEBUG TEACHER] Saved to temp: {temp_path}")
+                    
+                          # Open file with default application
+                    try:
+                            if os.name == 'nt':  # Windows
+                                os.startfile(temp_path)
+                            elif os.name == 'posix':  # macOS, Linux
+                                subprocess.run(['open', temp_path] if sys.platform == 'darwin' else ['xdg-open', temp_path], check=False)
+                        
+                            messagebox.showinfo("Success", "File opened")
+                    except Exception as e:
+                            messagebox.showinfo("Info", f"File saved to temporary location:\n{temp_path}")
+                    
+                            self.current_open_submission = None
+                    
+                    else:
+                    # SAVE THE FILE
+                    # Ask user where to save
+                        save_path = filedialog.asksaveasfilename(
+                            initialfile=filename,
+                            title="Save Submission File",
+                            filetypes=[("All files", "*.*")]
+                        )
+                    
+                        if save_path:
+                            # Save file
+                            with open(save_path, 'wb') as f:
+                                f.write(file_content)
+                        
+                            messagebox.showinfo("Success", f"File saved to:\n{save_path}")
+                    
+                        if hasattr(self, 'current_download_submission'):
+                            self.current_download_submission = None
+                        
+                except Exception as e:
+                    print(f"[ERROR TEACHER] Download failed: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    messagebox.showerror("Error", f"File operation failed: {str(e)}")    
+            
+            
+
             elif "comments" in message:
                 # Handle VIEW_COMMENTS response
                 if self.current_expand_view:
@@ -1768,6 +2033,7 @@ class TeacherDashboard:
                 # Handle POST_COMMENT success, refresh comments
                 if self.current_expand_view:
                     self.current_expand_view._load_comments()
+            
             elif message.get("message", "").startswith("Class created"):
                 # Refresh classes first to show the new class immediately
                 self.client.view_classes()
@@ -1904,113 +2170,183 @@ class TeacherDashboard:
         ).pack(pady=(0, 20))
     
     def _display_submissions_in_dialog(self, dialog, submissions):
-        """Display submissions in the dialog"""
-        print(f"[DEBUG] _display_submissions_in_dialog called with {len(submissions)} submissions")
-        
-        if not hasattr(dialog, 'submissions_frame'):
-            print(f"[DEBUG] Dialog doesn't have submissions_frame attribute")
-            return
-        
-        # Clear existing widgets
-        for widget in dialog.submissions_frame.winfo_children():
-            widget.destroy()
-        
-        if not submissions:
-            ttk.Label(
-                dialog.submissions_frame,
-                text="No submissions yet",
-                font=("Arial", 11),
-                bootstyle="inverse-secondary"
-            ).pack(padx=20, pady=20)
-            return
-        
-        # Display each submission
-        for submission in submissions:
-            sub_frame = ttk.Frame(dialog.submissions_frame, bootstyle="secondary", relief="raised")
-            sub_frame.pack(fill=X, padx=10, pady=5)
-            
-            info_frame = ttk.Frame(sub_frame, bootstyle="secondary")
-            info_frame.pack(fill=X, padx=15, pady=10)
-            
-            # Student name
-            student_name = submission.get('student_name', 'Unknown Student')
-            ttk.Label(
-                info_frame,
-                text=f"👤 {student_name}",
-                font=("Arial", 12, "bold"),
-                bootstyle="inverse-secondary"
-            ).pack(anchor=W)
-            
-            # Submitted date
-            submitted_at = submission.get('submitted_at', '')
-            if submitted_at:
+            """Display submissions in the dialog"""
+            print(f"[DEBUG] _display_submissions_in_dialog called with {len(submissions)} submissions")
+
+            if not hasattr(dialog, 'submissions_frame'):
+                print(f"[DEBUG] Dialog doesn't have submissions_frame attribute")
+                return
+
+            # Clear existing widgets
+            for widget in dialog.submissions_frame.winfo_children():
+               widget.destroy()
+
+            if not submissions:
+                ttk.Label(
+                    dialog.submissions_frame,
+                    text="No submissions yet",
+                    font=("Arial", 11),
+                    bootstyle="inverse-secondary"
+                ).pack(padx=20, pady=20)
+                return
+
+            # Display each submission
+            for submission in submissions:
+                sub_frame = ttk.Frame(dialog.submissions_frame, bootstyle="secondary", relief="raised")
+                sub_frame.pack(fill=X, padx=10, pady=5)
+    
+                info_frame = ttk.Frame(sub_frame, bootstyle="secondary")
+                info_frame.pack(fill=X, padx=15, pady=10)
+    
+                # Student name
+                student_name = submission.get('student_name', 'Unknown Student')
                 ttk.Label(
                     info_frame,
-                    text=f"📅 Submitted: {submitted_at}",
-                    font=("Arial", 10),
+                    text=f"👤 {student_name}",
+                    font=("Arial", 12, "bold"),
                     bootstyle="inverse-secondary"
-                ).pack(anchor=W, pady=(5, 0))
+                ).pack(anchor=W)
+    
+                 # Submitted date
+                submitted_at = submission.get('submitted_at', '')
+                if submitted_at:
+                    ttk.Label(
+                        info_frame,
+                        text=f"📅 Submitted: {submitted_at}",
+                        font=("Arial", 10),
+                        bootstyle="inverse-secondary"
+                    ).pack(anchor=W, pady=(5, 0))
+    
+                # Text content (if any)
+                text_content = submission.get('text_content', '')
+                if text_content:
+                    ttk.Label(
+                        info_frame,
+                        text=f"💬 Comment: {text_content}",
+                        font=("Arial", 10),
+                        bootstyle="inverse-secondary",
+                        wraplength=500
+                    ).pack(anchor=W, pady=(0, 10))
+    
+                # File download section (if file exists)
+                file_id = submission.get('file_id')
+                if file_id:
+                    file_frame = ttk.Frame(info_frame, bootstyle="secondary")
+                    file_frame.pack(fill=X, pady=(5, 0))
+        
+                    ttk.Label(
+                        file_frame,
+                        text="📎 Submitted File:",
+                        font=("Arial", 10, "bold"),
+                        bootstyle="inverse-secondary"
+                    ).pack(side=LEFT, padx=(0, 10))
+        
+                    # Store submission data for button handlers
+                    submission_data = submission.copy()
+                    file_id_local = submission_data.get('file_id')
+                    filename_local = submission_data.get('filename', 'Unknown file')
             
-            # File info and download button
-            file_path = submission.get('file_path', '')
-            if file_path:
-                import os
-                file_name = os.path.basename(file_path)
+                    # Create button handlers with proper closure
+                    def make_download_handler(sub_data, file_id, filename):
+                        def handler():
+                            """Download button clicked"""
+                            print(f"[DEBUG] Download clicked for file: {file_id}, filename: {filename}")
+                            from tkinter import messagebox
                 
-                file_frame = ttk.Frame(info_frame, bootstyle="secondary")
-                file_frame.pack(fill=X, pady=(5, 0))
+                            # Show downloading message
+                            download_msg = ttk.Label(
+                                file_frame,
+                                text="⏳ Downloading...",
+                                font=("Arial", 9, "italic"),
+                                bootstyle="inverse-secondary"
+                            )
+                            download_msg.pack(side=LEFT, padx=(0, 10))
+                            dialog.update()
                 
-                ttk.Label(
-                    file_frame,
-                    text=f"📎 {file_name}",
-                    font=("Arial", 10),
-                    bootstyle="inverse-secondary"
-                ).pack(side=LEFT)
+                            # Send download request
+                            result = self.client.download_file_binary(file_id)
                 
-                def download_file(path=file_path, name=file_name):
-                    from tkinter import filedialog
-                    import shutil
-                    
-                    # Ask where to save
-                    save_path = filedialog.asksaveasfilename(
-                        title="Save submission file",
-                        initialfile=name,
-                        defaultextension=os.path.splitext(name)[1]
-                    )
-                    
-                    if save_path:
-                        try:
-                            shutil.copy2(path, save_path)
-                            messagebox.showinfo("Success", f"File downloaded to:\n{save_path}")
-                        except Exception as e:
-                            messagebox.showerror("Error", f"Could not download file: {str(e)}")
+                            # Remove downloading message
+                            download_msg.destroy()
                 
-                ttk.Button(
-                    file_frame,
-                    text="💾 Download",
-                    command=download_file,
-                    bootstyle="success-outline",
-                    width=12
-                ).pack(side=RIGHT, padx=(10, 0))
+                            if not result.get('success'):
+                                messagebox.showerror("Error", f"Failed to start download: {result.get('error')}")
+                            else:
+                                print(f"[DEBUG] Download started: {result.get('request_id')}")
+                        return handler
+            
+                    def make_open_handler(sub_data, file_id, filename):
+                        def handler():
+                            """Open button clicked"""
+                            print(f"[DEBUG] Open clicked for file: {file_id}, filename: {filename}")
+                            from tkinter import messagebox
                 
-                # Open button
-                def open_file(path=file_path):
-                    import subprocess
-                    if os.path.exists(path):
-                        try:
-                            subprocess.run(['open', path], check=True)
-                        except Exception as e:
-                            messagebox.showerror("Error", f"Could not open file: {str(e)}")
-                    else:
-                        messagebox.showerror("Error", "File not found")
+                            # Show opening message
+                            open_msg = ttk.Label(
+                                file_frame,
+                                text="⏳ Opening...",
+                                font=("Arial", 9, "italic"),
+                                bootstyle="inverse-secondary"
+                            )
+                            open_msg.pack(side=LEFT, padx=(0, 10))
+                            dialog.update()
                 
-                ttk.Button(
-                    file_frame,
-                    text="👁️ Open",
-                    command=open_file,
-                    bootstyle="info-outline",
-                    width=12
-                ).pack(side=RIGHT, padx=(10, 0))
+                            # Send download request
+                            result = self.client.download_file_binary(file_id)
+                
+                            # Remove opening message
+                            open_msg.destroy()
+                  
+                            if not result.get('success'):
+                                messagebox.showerror("Error", f"Failed to start download: {result.get('error')}")
+                            else:
+                                # Store that we want to open this request
+                                request_id = result.get('request_id')
+                                setattr(self, f'want_to_open_{request_id}', True)
+                                print(f"[DEBUG] Open request started: {request_id}")
+                        return handler
+            
+                # Create handlers with current values
+                    download_handler = make_download_handler(submission_data, file_id_local, filename_local)
+                    open_handler = make_open_handler(submission_data, file_id_local, filename_local)
+            
+                    # Download button
+                    ttk.Button(
+                        file_frame,
+                        text="⬇️ Download",
+                        command=download_handler,
+                        bootstyle="success-outline",
+                        width=12
+                    ).pack(side=LEFT, padx=(0, 10))
+        
+                    # Open button
+                    ttk.Button(
+                        file_frame,
+                        text="📂 Open",
+                        command=open_handler,
+                        bootstyle="info-outline",
+                        width=10
+                    ).pack(side=LEFT, padx=(0, 10))
+            
+                    # Show file name
+                    ttk.Label(
+                        file_frame,
+                        text=f"({filename_local})",
+                        font=("Arial", 9, "italic"),
+                        bootstyle="inverse-secondary"
+                    ).pack(side=LEFT, padx=(10, 0))
+    
+                else:
+                    # No file submitted
+                    ttk.Label(
+                        info_frame,
+                        text="📝 Text-only submission (no file)",
+                        font=("Arial", 10, "italic"),
+                        bootstyle="inverse-secondary"
+                    ).pack(anchor=W, pady=(5, 0))
+        
+                # Separator between submissions
+                ttk.Separator(dialog.submissions_frame, orient='horizontal').pack(fill=X, padx=20, pady=5)
     
     def _show_comment_notification_and_refresh(self, message, item_type):
         """Show comment notification popup and refresh comments after dismissal"""
@@ -2031,3 +2367,122 @@ class TeacherDashboard:
         if messagebox.askokcancel("Quit", "Do you want to quit?"):
             self.client.disconnect()
             self.window.destroy()
+
+
+    def _download_material_handler(self, file_id, filename, material_type, title):
+        """Handle material download for teacher"""
+        from tkinter import messagebox, filedialog
+        
+        result = self.client.download_file_binary(file_id)
+        
+        if result.get('success'):
+            binary_data = result.get('binary_data')
+            download_filename = result.get('filename', filename)
+            
+            # Ask where to save
+            save_path = filedialog.asksaveasfilename(
+                defaultextension="",
+                initialfile=download_filename,
+                filetypes=[("All Files", "*.*")]
+            )
+            
+            if save_path:
+                try:
+                    with open(save_path, 'wb') as f:
+                        f.write(binary_data)
+                    messagebox.showinfo("Success", 
+                        f"Material downloaded!\n\n"
+                        f"📄 {download_filename}\n"
+                        f"📦 {len(binary_data):,} bytes\n"
+                        f"📁 {save_path}"
+                    )
+                except Exception as e:
+                    messagebox.showerror("Error", f"Save failed: {str(e)}")
+        else:
+            messagebox.showerror("Error", f"Download failed: {result.get('error')}")
+
+
+
+    def _save_downloaded_file(self, filename, binary_data, request_id=None):
+        """Save a downloaded file"""
+        from tkinter import filedialog, messagebox
+    
+        try:
+            save_path = filedialog.asksaveasfilename(
+                defaultextension="",
+                initialfile=filename,
+                filetypes=[("All Files", "*.*")]
+            )
+        
+            if save_path:
+                with open(save_path, 'wb') as f:
+                    f.write(binary_data)
+            
+                messagebox.showinfo(
+                    "Success", 
+                    f"Downloaded:\n{filename}\nSize: {len(binary_data):,} bytes"
+                )
+            else:
+                 messagebox.showinfo("Cancelled", "Download cancelled")
+        except Exception as e:
+            messagebox.showerror("Error", f"Cannot save: {str(e)}")
+
+    def _open_downloaded_file(self, filename, binary_data, request_id=None):
+        
+        """Open a downloaded file directly"""
+        from tkinter import messagebox
+        import tempfile
+        import os
+        import subprocess
+        import sys
+    
+        try:
+            # Make sure filename is a string
+            if not isinstance(filename, str):
+                filename = str(filename) if filename else "download.bin"
+        
+            # Get file extension
+            _, ext = os.path.splitext(filename)
+            if not ext:
+                ext = '.bin'  # Default extension
+        
+                 # Create temp file
+            with tempfile.NamedTemporaryFile(
+               delete=False, 
+               suffix=ext,
+               prefix='submission_'
+           ) as tmp:
+               tmp.write(binary_data)
+               temp_path = tmp.name
+        
+            print(f"[DEBUG] Saved temp file: {temp_path}")
+        
+             # Open the file with default application
+            try:
+                if os.name == 'nt':  # Windows
+                    os.startfile(temp_path)
+                    message = f"Opening file: {filename}"
+                elif sys.platform == 'darwin':  # macOS
+                    subprocess.run(['open', temp_path], check=True)
+                    message = f"Opening file: {filename}"
+                else:  # Linux
+                    subprocess.run(['xdg-open', temp_path], check=True)
+                    message = f"Opening file: {filename}"
+            except:
+                message = f"File saved to: {temp_path}\n\nPlease open it manually."
+        
+            messagebox.showinfo(
+               "Success", 
+               f"{message}\n\n"
+                f"Size: {len(binary_data):,} bytes\n"
+                f"Note: This is a temporary copy"
+            )
+        
+        except Exception as e:
+            messagebox.showerror(
+                "Error", 
+                f"Cannot open file: {str(e)}\n\n"
+                f"File has been downloaded. You can open it manually."
+            )
+            import traceback
+            traceback.print_exc()

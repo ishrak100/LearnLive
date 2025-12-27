@@ -1,8 +1,6 @@
 import socket
 import json
 import threading
-import uuid
-import time
 from typing import Callable, Optional
 import os
 import sys
@@ -27,7 +25,6 @@ class LearnLiveClient:
         self.running = False
         self.message_callback = None
         self.server_address = (SERVER_HOST, SERVER_PORT)
-        self.pending_download = None  # NEW: Track pending download
         
     def connect(self, host: str = '127.0.0.1', port: int = SERVER_PORT) -> dict:
         """
@@ -117,51 +114,6 @@ class LearnLiveClient:
                     
                     # DEBUG: Print received message
                     print(f"📥 Client received: {message}")
-                    
-                    # NEW: Check if this is a file download response
-                    if (message.get('type') == 'SUCCESS' and 
-                        'size' in message and 
-                        'filename' in message and
-                        self.pending_download is not None):
-                        
-                        print(f"[CLIENT] File metadata received, expecting {message['size']} bytes")
-                        
-                        # Now read binary data directly from socket
-                        size = message.get('size', 0)
-                        if size > 0:
-                            binary_data = b""
-                            bytes_received = 0
-                            
-                            while bytes_received < size:
-                                remaining = size - bytes_received
-                                chunk = self.socket.recv(min(4096, remaining))
-                                if not chunk:
-                                    break
-                                binary_data += chunk
-                                bytes_received += len(chunk)
-                            
-                            print(f"[CLIENT] Received {len(binary_data)} bytes of binary data")
-                            
-                            # Create complete download response
-                            download_response = {
-                                "type": "FILE_DOWNLOAD_COMPLETE",
-                                "success": True,
-                                "filename": message.get('filename'),
-                                "binary_data": binary_data,
-                                "size": len(binary_data),
-                                "content_type": message.get('content_type'),
-                                "request_id": self.pending_download
-                            }
-                            
-                            # Reset pending download
-                            self.pending_download = None
-                            
-                            # Call callback with complete file
-                            if self.message_callback:
-                                self.message_callback(download_response)
-                            
-                            # Skip normal callback for metadata
-                            continue
                     
                     # Call callback if set
                     if self.message_callback:
@@ -315,76 +267,78 @@ class LearnLiveClient:
         })
     
     def submit_assignment_gridfs(self, assignment_id, user_id, file_content, submission_text="", filename=None):
-        """ Submit assignment with GridFS storage using binary protocol.Sends metadata as JSON first, then raw binary data."""
+      """ Submit assignment with GridFS storage using binary protocol.Sends metadata as JSON first, then raw binary data."""
         # Create a unique request ID to track this specific request
-        request_id = str(uuid.uuid4())[:8]
+      import uuid
+      request_id = str(uuid.uuid4())[:8]
     
-        # Step 1: Send metadata as JSON
-        data_payload = {
-            "assignment_id": assignment_id,
-            "user_id": user_id,
-            "submission_text": submission_text,
-            "filename": filename or "",
-            "file_size": len(file_content),
-            "request_id": request_id  # Put request_id inside data
-        }
+      # Step 1: Send metadata as JSON
+      data_payload = {
+        "assignment_id": assignment_id,
+        "user_id": user_id,
+        "submission_text": submission_text,
+        "filename": filename or "",
+        "file_size": len(file_content),
+        "request_id": request_id  # Put request_id inside data
+    }
     
-        print(f"[CLIENT GRIDFS] Sending metadata: {data_payload}")
+      print(f"[CLIENT GRIDFS] Sending metadata: {data_payload}")
     
-        # Create a temporary callback to capture the response
-        response_received = {"result": None}
+      # Create a temporary callback to capture the response
+      response_received = {"result": None}
     
-        def gridfs_response_callback(response):
-            response_received["result"] = response
-            print(f"[CLIENT GRIDFS] Received response for request {request_id}: {response}")
+      def gridfs_response_callback(response):
+          response_received["result"] = response
+          print(f"[CLIENT GRIDFS] Received response for request {request_id}: {response}")
     
-        # Temporarily set callback to capture this specific response
-        original_callback = self.message_callback
-        self.set_message_callback(gridfs_response_callback)
+      # Temporarily set callback to capture this specific response
+      original_callback = self.message_callback
+      self.set_message_callback(gridfs_response_callback)
      
-        try:
-            # Send metadata message
-            send_success = self.send_message("SUBMIT_ASSIGNMENT_GRIDFS", data_payload)
+      try:
+          # Send metadata message
+          send_success = self.send_message("SUBMIT_ASSIGNMENT_GRIDFS", data_payload)
         
-            if not send_success:
-                print(f"[CLIENT GRIDFS ERROR] Failed to send metadata")
-                return {'type': 'ERROR', 'error': 'Failed to send metadata'}
+          if not send_success:
+              print(f"[CLIENT GRIDFS ERROR] Failed to send metadata")
+              return {'type': 'ERROR', 'error': 'Failed to send metadata'}
         
-            print(f"[CLIENT GRIDFS] Metadata accepted, sending {len(file_content)} bytes of binary data")
+          print(f"[CLIENT GRIDFS] Metadata accepted, sending {len(file_content)} bytes of binary data")
         
-            # Step 2: Send raw binary data (NO encoding)
-            try:
-                # Send binary data directly
-                self.socket.sendall(file_content)
-                print(f"[CLIENT GRIDFS] Binary data sent successfully")
+          # Step 2: Send raw binary data (NO encoding)
+          try:
+              # Send binary data directly
+              self.socket.sendall(file_content)
+              print(f"[CLIENT GRIDFS] Binary data sent successfully")
             
-                # Wait for response (with timeout)
-                timeout = 10  # 10 seconds timeout
-                start_time = time.time()
+              # Wait for response (with timeout)
+              import time
+              timeout = 10  # 10 seconds timeout
+              start_time = time.time()
             
-                while response_received["result"] is None and time.time() - start_time < timeout:
-                    time.sleep(0.1)  # Small delay to avoid busy waiting
+              while response_received["result"] is None and time.time() - start_time < timeout:
+                  time.sleep(0.1)  # Small delay to avoid busy waiting
             
-                # Restore original callback
-                self.set_message_callback(original_callback)
+              # Restore original callback
+              self.set_message_callback(original_callback)
             
-                if response_received["result"]:
-                    return response_received["result"]
-                else:
-                    print(f"[CLIENT GRIDFS ERROR] No response received within timeout")
-                    return {'type': 'ERROR', 'error': 'No response from server'}
+              if response_received["result"]:
+                  return response_received["result"]
+              else:
+                  print(f"[CLIENT GRIDFS ERROR] No response received within timeout")
+                  return {'type': 'ERROR', 'error': 'No response from server'}
                 
-            except Exception as e:
-                print(f"[CLIENT GRIDFS ERROR] Failed to send binary data: {e}")
-                # Restore original callback
-                self.set_message_callback(original_callback)
-                return {'type': 'ERROR', 'error': f'Failed to send binary data: {str(e)}'}
+          except Exception as e:
+              print(f"[CLIENT GRIDFS ERROR] Failed to send binary data: {e}")
+              # Restore original callback
+              self.set_message_callback(original_callback)
+              return {'type': 'ERROR', 'error': f'Failed to send binary data: {str(e)}'}
             
-        except Exception as e:
-            print(f"[CLIENT GRIDFS ERROR] General error: {e}")
-            # Restore original callback
-            self.set_message_callback(original_callback)
-            return {'type': 'ERROR', 'error': f'General error: {str(e)}'}
+      except Exception as e:
+          print(f"[CLIENT GRIDFS ERROR] General error: {e}")
+          # Restore original callback
+          self.set_message_callback(original_callback)
+          return {'type': 'ERROR', 'error': f'General error: {str(e)}'}
     
     def view_submissions(self, assignment_id: str) -> bool:
         """View submissions for an assignment (teacher only)."""
@@ -515,125 +469,104 @@ class LearnLiveClient:
             "user_id": user_id
         })
     
-    # REMOVED duplicate get_notifications method
-    
-    # NEW: Fixed download_file_binary method
-    def download_file_binary(self, file_id):
+    def get_notifications(self, user_id: str) -> bool:
         """
-        Download a file from the server using the SAME socket connection.
-        The file will be delivered via the message callback as FILE_DOWNLOAD_COMPLETE.
+        Get notifications for a user.
         
+        Args:
+            user_id: User ID
+            
         Returns:
-            dict: Initial response with request_id
+            bool: True if request sent
         """
+        return self.send_message("GET_NOTIFICATIONS", {
+            "user_id": user_id
+        })
+    
+
+    def download_file_binary(self, file_id):
+        """Download file using binary protocol. Returns: {'success': True, 'filename': '...', 'binary_data': b'...'} or error"""
         try:
-            # Generate a unique request ID
-            request_id = str(uuid.uuid4())[:8]
-            
-            # Store that we're expecting a download
-            self.pending_download = request_id
-            
-            # Send the download request using the standard protocol
-            success = self.send_message("DOWNLOAD_FILE", {
-                "file_id": file_id,
-                "request_id": request_id
-            })
-            
-            if not success:
-                self.pending_download = None
+            print(f"[CLIENT BINARY] Download request sent for file_id: {file_id}")
+        
+            # Create a new socket connection for this download
+            # This avoids mixing JSON and binary on the same socket stream
+            import socket
+            temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            temp_socket.connect(self.server_address)
+        
+            # Send download request on temp socket
+            request = {
+                'type': 'DOWNLOAD_FILE',
+                'data': {'file_id': file_id}
+            }
+            temp_socket.sendall(json.dumps(request).encode() + b'\n')
+        
+            # First, receive the JSON metadata
+            metadata_data = b""
+            while True:
+               chunk = temp_socket.recv(1)
+               if not chunk:
+                    break
+               if chunk == b'\n':
+                    break
+               metadata_data += chunk
+        
+            if not metadata_data:
+                temp_socket.close()
+                return {'success': False, 'error': 'No response from server'}
+        
+            try:
+                metadata = json.loads(metadata_data.decode())
+            except json.JSONDecodeError:
+                temp_socket.close()
+                return {'success': False, 'error': 'Invalid JSON response'}
+        
+            print(f"[CLIENT BINARY] Metadata received: {metadata}")
+        
+            if not metadata.get('success'):
+                temp_socket.close()
+                return {'success': False, 'error': metadata.get('error', 'Download failed')}
+        
+        # Now receive the binary data
+            size = metadata.get('size', 0)
+            if size == 0:
+                temp_socket.close()
+                return {'success': False, 'error': 'File size is 0'}
+        
+            print(f"[CLIENT BINARY] Expecting {size} bytes of binary data")
+        
+            binary_data = b""
+            bytes_received = 0
+        
+            while bytes_received < size:
+                remaining = size - bytes_received
+                chunk = temp_socket.recv(min(4096, remaining))
+                if not chunk:
+                     break
+                binary_data += chunk
+                bytes_received += len(chunk)
+        
+            temp_socket.close()
+        
+            print(f"[CLIENT BINARY] Received {len(binary_data)} bytes")
+        
+            if len(binary_data) != size:
                 return {
                     'success': False, 
-                    'error': 'Failed to send download request'
+                    'error': f'Size mismatch: expected {size}, got {len(binary_data)} bytes'
                 }
-            
-            print(f"[CLIENT] Download request sent for file_id: {file_id}, request_id: {request_id}")
-            
+        
             return {
                 'success': True,
-                'message': 'Download request sent',
-                'request_id': request_id,
-                'status': 'pending'
+                'filename': metadata.get('filename', 'download.bin'),
+                'binary_data': binary_data,
+                'size': len(binary_data),
+                'content_type': metadata.get('content_type')
             }
-            
+        
         except Exception as e:
-            print(f"[CLIENT DOWNLOAD ERROR] {e}")
-            self.pending_download = None
+            print(f"[CLIENT BINARY DOWNLOAD ERROR] {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'error': str(e)}
-        
-    def upload_material_gridfs(self, class_id, teacher_id, title, material_type, file_content, filename=None):
-        """Upload material with GridFS storage using binary protocol"""
-        import uuid
-        import time
-    
-        # Create a unique request ID
-        request_id = str(uuid.uuid4())[:8]
-    
-        # Get filename from path if not provided
-        if filename is None:
-            filename = "material.bin"
-    
-        print(f"[CLIENT MATERIAL] Uploading material: {title}, size: {len(file_content)} bytes")
-    
-        # Create metadata
-        data_payload = {
-            "class_id": class_id,
-            "teacher_id": teacher_id,
-            "title": title,
-            "material_type": material_type,
-           "filename": filename,
-           "file_size": len(file_content),
-            "request_id": request_id,
-            "user_role": "teacher"  # Add user role for server validation
-        }
-    
-        # Create a temporary callback to capture the response
-        response_received = {"result": None}
-    
-        def material_response_callback(response):
-            response_received["result"] = response
-            print(f"[CLIENT MATERIAL] Received response for request {request_id}: {response}")
-    
-        # Temporarily set callback
-        original_callback = self.message_callback
-        self.set_message_callback(material_response_callback)
-    
-        try:
-            # Send metadata message
-            send_success = self.send_message("UPLOAD_MATERIAL_GRIDFS", data_payload)
-         
-            if not send_success:
-                print(f"[CLIENT MATERIAL ERROR] Failed to send metadata")
-                return {'type': 'ERROR', 'error': 'Failed to send metadata'}
-        
-            print(f"[CLIENT MATERIAL] Metadata accepted, sending {len(file_content)} bytes of binary data")
-        
-            # Send raw binary data
-            try:
-                self.socket.sendall(file_content)
-                print(f"[CLIENT MATERIAL] Binary data sent successfully")
-            
-                # Wait for response
-                timeout = 10
-                start_time = time.time()
-            
-                while response_received["result"] is None and time.time() - start_time < timeout:
-                   time.sleep(0.1)
-            
-                # Restore original callback
-                self.set_message_callback(original_callback)
-            
-                if response_received["result"]:
-                    return response_received["result"]
-                else:
-                    print(f"[CLIENT MATERIAL ERROR] No response received within timeout")
-                    return {'type': 'ERROR', 'error': 'No response from server'}
-                
-            except Exception as e:
-                print(f"[CLIENT MATERIAL ERROR] Failed to send binary data: {e}")
-                self.set_message_callback(original_callback)
-                return {'type': 'ERROR', 'error': f'Failed to send binary data: {str(e)}'}
-            
-        except Exception as e:
-            print(f"[CLIENT MATERIAL ERROR] General error: {e}")
-            self.set_message_callback(original_callback)
-            return {'type': 'ERROR', 'error': f'General error: {str(e)}'}

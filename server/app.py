@@ -227,7 +227,7 @@ class LearnLiveServer:
             MSG_DOWNLOAD_FILE, MSG_REMOVE_STUDENT, MSG_DELETE_CLASS,
             MSG_VIEW_STUDENTS, MSG_UPLOAD_MATERIAL, MSG_VIEW_MATERIALS,
             MSG_GET_TEACHER_SUBMISSIONS, MSG_GET_STUDENT_ALL_ASSIGNMENTS, MSG_START_FILE_TRANSFER, 
-            MSG_FILE_CHUNK, MSG_END_FILE_TRANSFER, MSG_POST_MESSAGE, MSG_GET_MESSAGES
+            MSG_FILE_CHUNK, MSG_END_FILE_TRANSFER, MSG_POST_MESSAGE, MSG_GET_MESSAGES, MSG_SUBMIT_ASSIGNMENT_GRIDFS
         ]
         
         # Verify token if required
@@ -292,7 +292,7 @@ class LearnLiveServer:
             return self.file_handler.handle_file_upload_complete(data)
         
         elif msg_type == MSG_DOWNLOAD_FILE:
-            return self.handle_download_file(data)
+            return self.handle_download_file(data, client_socket, address) 
         
         elif msg_type == MSG_REMOVE_STUDENT:
             return self.handle_remove_student(data)
@@ -317,6 +317,12 @@ class LearnLiveServer:
         
         elif msg_type == MSG_GET_NOTIFICATIONS:
             return self.handle_get_notifications(data)
+        elif msg_type == MSG_SUBMIT_ASSIGNMENT_GRIDFS:
+          return self.handle_submit_assignment_gridfs(data, client_socket, address)
+        
+        elif msg_type == MSG_UPLOAD_MATERIAL_GRIDFS:  # NEW: Add this line
+         return self.handle_upload_material_gridfs(data, client_socket, address)
+        
 
         elif msg_type == MSG_POST_MESSAGE:
             try:
@@ -518,27 +524,57 @@ class LearnLiveServer:
         """Handle submit assignment request"""
         if data['user_role'] != 'student':
             return {'type': RESP_ERROR, 'error': 'Only students can submit assignments'}
-        
+
         assignment_id = data.get('assignment_id')
-        file_path = data.get('file_path')
-        text_content = data.get('text_content')
-        
-        result = self.db.submit_assignment(
-            assignment_id, data['user_id'], file_path, text_content
-        )
-        
-        if result['success']:
-            # Notify teacher
-            self.notifier.notify_new_submission(assignment_id, data['user_email'])
-            
+        file_data_hex = data.get('file_data')  # This is HEX encoded string from client
+        text_content = data.get('text_content', '')
+        filename = data.get('filename', '')  # Get original filename
+
+        # Convert hex string back to binary
+        file_content = None
+        if file_data_hex:
+            try:
+                # Decode hex string to binary
+                file_content = bytes.fromhex(file_data_hex)
+            except Exception as e:
+                return {
+                    'type': RESP_ERROR, 
+                    'success': False, 
+                    'error': f'Invalid file data format: {str(e)}'
+                }
+
+        # Check if we have either file or text content
+        if not file_content and not text_content:
             return {
-                'type': RESP_SUCCESS,
-                'success': True,
-                'submission_id': result['submission_id']
+                'type': RESP_ERROR,
+                'success': False,
+                'error': 'Submission must contain either a file or text content'
             }
-        else:
-            return {'type': RESP_ERROR, 'success': False, 'error': result['error']}
-    
+
+        try:
+            result = self.db.submit_assignment(assignment_id, data['user_id'], file_content, text_content, filename)
+ 
+            if result['success']:
+                return {
+                    'type': RESP_SUCCESS,
+                    'success': True,
+                    'submission_id': result['submission_id']
+                }
+            else:
+                return {
+                    'type': RESP_ERROR,
+                    'success': False,
+                    'error': result['error']
+                }
+
+        except Exception as e:
+            return {
+                'type': RESP_ERROR,
+                'success': False,
+                'error': f'Server error: {str(e)}'
+            }
+
+
     def handle_view_submissions(self, data):
         """Handle view submissions request"""
         if data['user_role'] != 'teacher':
@@ -726,31 +762,61 @@ class LearnLiveServer:
         else:
             return {'type': RESP_ERROR, 'success': False, 'error': result['error']}
     
-    def handle_download_file(self, data):
-        """Handle file download request"""
-        file_path = data.get('file_path')
-        if not file_path:
-            return {'type': RESP_ERROR, 'error': 'No file path provided'}
+    def handle_download_file(self, data, client_socket, address):
+        """Handle file download request - use same protocol as other messages"""
+        file_id = data.get('file_id')
+        request_id = data.get('request_id')
+
+        if not file_id:
+            return {'type': RESP_ERROR, 'error': 'File ID required'}
+
+        result = self.db.download_material_gridfs(file_id)
+
+        if result['success']:
+            # Get file content
+           file_content = result['file_content']
+           filename = result.get('filename', 'download.bin')
+           size = len(file_content)
+    
+           print(f"[SERVER DOWNLOAD] Sending file: {filename}, size: {size} bytes")
+    
+           # Create metadata
+           metadata = {
+               'type': RESP_SUCCESS,
+               'success': True,
+               'filename': filename,
+               'content_type': result.get('content_type', 'application/octet-stream'),
+               'size': size
+           }
         
-        try:
-            import base64
-            # Read the file
-            with open(file_path, 'rb') as f:
-                file_data = f.read()
-            
-            # Encode to base64 for transmission
-            encoded_data = base64.b64encode(file_data).decode('utf-8')
-            
-            return {
-                'type': RESP_SUCCESS,
-                'success': True,
-                'file_data': encoded_data,
-                'filename': os.path.basename(file_path)
-            }
-        except FileNotFoundError:
-            return {'type': RESP_ERROR, 'error': 'File not found'}
-        except Exception as e:
-            return {'type': RESP_ERROR, 'error': f'Failed to read file: {str(e)}'}
+           if request_id:
+               metadata['request_id'] = request_id
+    
+           # Send metadata using length-prefixed protocol (same as all other messages)
+           json_data = json.dumps(metadata).encode()
+           length_prefix = len(json_data).to_bytes(4, byteorder='big')
+        
+           # Send metadata
+           client_socket.sendall(length_prefix + json_data)
+        
+           # Send binary data immediately after
+           print(f"[SERVER DOWNLOAD] Now sending {size} bytes of raw binary...")
+           client_socket.sendall(file_content)
+        
+           print(f"[SERVER DOWNLOAD] File sent successfully")
+        
+           # FIX: Return a proper response, not None
+           return {
+               'type': RESP_SUCCESS,
+               'success': True,
+               'message': 'File sent successfully',
+               'filename': filename,
+               'size': size
+           }
+    
+        else:
+           return {'type': RESP_ERROR, 'success': False, 'error': result['error']}
+ 
     
     def handle_remove_student(self, data):
         """Handle remove student request"""
@@ -793,46 +859,32 @@ class LearnLiveServer:
             }
         else:
             return {'type': RESP_ERROR, 'success': False, 'error': result['error']}
+        
+
     
     def handle_upload_material(self, data):
-        """Handle upload material request"""
-        if data['user_role'] != 'teacher':
-            return {'type': RESP_ERROR, 'error': 'Only teachers can upload materials'}
-        
-        class_id = data.get('class_id')
-        title = data.get('title')
-        material_type = data.get('material_type', 'Document')
-        file_path = data.get('file_path')
-        
-        result = self.db.upload_material(class_id, data['user_id'], title, material_type, file_path)
-        
-        if result['success']:
-            # Get class data and student emails for notifications
-            class_data = self.db.get_class_by_id(class_id)
-            if class_data['success'] and class_data['class']:
-                class_info = class_data['class']
-                student_emails = []
-                
-                # Get student emails from enrolled_students
-                for student_id in class_info.get('enrolled_students', []):
-                    student = self.db.get_user_by_id(student_id)
-                    if student['success']:
-                        student_emails.append(student['user'].get('email'))
-                
-                # Extract file name from path
-                import os
-                file_name = os.path.basename(file_path) if file_path else 'Unknown file'
-                
-                # Send notifications (email + TCP)
-                self.notifier.notify_material_uploaded(class_info, title, file_name, student_emails)
-            
-            return {
-                'type': RESP_SUCCESS,
-                'success': True,
-                'material_id': result['material_id']
-            }
-        else:
-            return {'type': RESP_ERROR, 'success': False, 'error': result['error']}
+       """Handle upload material request"""
+       if data['user_role'] != 'teacher':
+           return {'type': RESP_ERROR, 'error': 'Only teachers can upload materials'}
+    
+       class_id = data.get('class_id')
+       title = data.get('title')
+       material_type = data.get('material_type', 'Document')
+       file_content = data.get('file_data')  # This should be binary data from the frontend
+    
+       result = self.db.upload_material(class_id, data['user_id'], title, material_type, file_content)
+    
+       if result['success']:
+           # Send notifications about the uploaded material
+           return {
+               'type': RESP_SUCCESS,
+               'success': True,
+               'material_id': result['material_id']
+           }
+       else:
+           return {'type': RESP_ERROR, 'success': False, 'error': result['error']}
+
+
     
     def handle_view_materials(self, data):
         """Handle view materials request"""
@@ -896,6 +948,152 @@ class LearnLiveServer:
             }
         else:
             return {'type': RESP_ERROR, 'success': False, 'error': result['error']}
+        
+    def handle_submit_assignment_gridfs(self, data, client_socket, address):
+        """Handle GridFS-based assignment submission with binary protocol"""
+        if data['user_role'] != 'student':
+            return {'type': RESP_ERROR, 'error': 'Only students can submit assignments'}
+    
+        assignment_id = data.get('assignment_id')
+        user_id = data.get('user_id')
+        submission_text = data.get('submission_text', '')
+        filename = data.get('filename', '')
+        expected_file_size = data.get('file_size', 0)
+    
+        print(f"[SERVER GRIDFS] Starting GridFS submission from {address}")
+        print(f"  Assignment ID: {assignment_id}")
+        print(f"  User ID: {user_id}")
+        print(f"  Filename: {filename}")
+        print(f"  Expected file size: {expected_file_size} bytes")
+    
+        try:
+            # Read binary data directly from socket
+            file_content = b""
+            bytes_received = 0
+        
+            # Read the binary data that follows the JSON message
+            while bytes_received < expected_file_size:
+                chunk_size = min(4096, expected_file_size - bytes_received)
+                chunk = client_socket.recv(chunk_size)
+                if not chunk:
+                    print(f"  ❌ Connection closed prematurely")
+                    break
+                file_content += chunk
+                bytes_received += len(chunk)
+        
+            print(f"[SERVER GRIDFS] Received {len(file_content)} bytes of binary data")
+         
+            # Verify we got all data
+            if len(file_content) != expected_file_size:
+                print(f"  ⚠️ Warning: Expected {expected_file_size} bytes, got {len(file_content)}")
+        
+            # Now call the database handler for GridFS storage
+            result = self.db.submit_assignment_gridfs(
+                assignment_id, user_id, file_content, submission_text, filename
+            )
+        
+            if result['success']:
+                print(f"  ✅ GridFS submission successful: {result['submission_id']}")
+            
+                # Send success response
+                return {
+                    'type': RESP_SUCCESS,
+                    'success': True,
+                    'submission_id': result['submission_id'],
+                    'file_id': result.get('file_id'),
+                    'message': 'Assignment submitted successfully to GridFS'
+                }
+            else:
+                print(f"  ❌ GridFS submission failed: {result['error']}")
+                return {
+                    'type': RESP_ERROR,
+                    'success': False,
+                    'error': result['error']
+                }
+            
+        except Exception as e:
+            print(f"  ❌ GridFS handler error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'type': RESP_ERROR,
+                'success': False,
+                'error': f'GridFS submission failed: {str(e)}'
+            }
+        
+    def handle_upload_material_gridfs(self, data, client_socket, address):
+        """Handle GridFS-based material upload with binary protocol"""
+        if data.get('user_role') != 'teacher':
+            return {'type': RESP_ERROR, 'error': 'Only teachers can upload materials'}
+    
+        class_id = data.get('class_id')
+        teacher_id = data.get('teacher_id')
+        title = data.get('title')
+        material_type = data.get('material_type', 'Document')
+        filename = data.get('filename', '')
+        expected_file_size = data.get('file_size', 0)
+    
+        print(f"[SERVER MATERIAL GRIDFS] Starting material upload from {address}")
+        print(f"  Class ID: {class_id}")
+        print(f"  Teacher ID: {teacher_id}")
+        print(f"  Title: {title}")
+        print(f"  Filename: {filename}")
+        print(f"  Expected file size: {expected_file_size} bytes")
+    
+        try:
+            # Read binary data directly from socket
+            file_content = b""
+            bytes_received = 0
+        
+            # Read the binary data that follows the JSON message
+            while bytes_received < expected_file_size:
+                chunk_size = min(4096, expected_file_size - bytes_received)
+                chunk = client_socket.recv(chunk_size)
+                if not chunk:
+                    print(f"  ❌ Connection closed prematurely")
+                    break
+                file_content += chunk
+                bytes_received += len(chunk)
+        
+            print(f"[SERVER MATERIAL GRIDFS] Received {len(file_content)} bytes of binary data")
+        
+            # Verify we got all data
+            if len(file_content) != expected_file_size:
+                print(f"  ⚠️ Warning: Expected {expected_file_size} bytes, got {len(file_content)}")
+        
+            # Call the database handler for GridFS storage
+            result = self.db.upload_material_gridfs(
+                class_id, teacher_id, title, material_type, file_content, filename
+            )
+        
+            if result['success']:
+                print(f"  ✅ Material upload successful: {result['material_id']}")
+            
+                # Send success response
+                return {
+                    'type': RESP_SUCCESS,
+                    'success': True,
+                    'material_id': result['material_id'],
+                    'file_id': result.get('file_id'),
+                    'message': 'Material uploaded successfully to GridFS'
+                }
+            else:
+                print(f"  ❌ Material upload failed: {result['error']}")
+                return {
+                    'type': RESP_ERROR,
+                    'success': False,
+                    'error': result['error']
+                }
+            
+        except Exception as e:
+            print(f"  ❌ Material upload handler error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+               'type': RESP_ERROR,
+               'success': False,
+                'error': f'Material upload failed: {str(e)}'
+            }
     
 
     
