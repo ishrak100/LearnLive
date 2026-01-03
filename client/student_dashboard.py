@@ -3,6 +3,8 @@ from ttkbootstrap.constants import *
 from tkinter import messagebox, Canvas, simpledialog
 import os
 import sys
+import threading
+import queue
 
 # Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -624,16 +626,24 @@ class StudentDashboard:
 
         window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
+    
+        # ADD THIS BINDING TO MAKE FRAME FULL WIDTH
+        canvas.bind(
+             "<Configure>",
+            lambda e: canvas.itemconfig(window_id, width=e.width)
+        )
 
-        canvas.pack(side=LEFT, fill=BOTH, expand=YES)
+         # Pack canvas and scrollbar to occupy the full available space
+        canvas.pack(side=LEFT, fill=BOTH, expand=True)
         scrollbar.pack(side=RIGHT, fill=Y)
- 
-        # Display each assignment
+
+        # Display each assignment - CHANGED FROM grid() TO pack()
         for assignment in self.assignments:
             assignment_frame = ttk.Frame(scrollable_frame, bootstyle="light")
+            # Changed from grid() to pack() with fill=X
             assignment_frame.pack(fill=X, padx=10, pady=5)
 
-            # Assignment card
+         # Assignment card
             card = ttk.Frame(assignment_frame, bootstyle="secondary", relief="raised")
             card.pack(fill=X, padx=5, pady=5)
 
@@ -641,7 +651,7 @@ class StudentDashboard:
             info_frame = ttk.Frame(card, bootstyle="secondary")
             info_frame.pack(fill=X, padx=15, pady=10)
 
-            # Title
+             # Title
             title_text = assignment.get('title', 'Untitled')
 
             ttk.Label(
@@ -656,10 +666,10 @@ class StudentDashboard:
             if description:
                 ttk.Label(
                     info_frame,
-                   text=description[:100] + ('...' if len(description) > 100 else ''),
-                   font=("Arial", 10),
-                   bootstyle="inverse-secondary",
-                   wraplength=600
+                    text=description[:100] + ('...' if len(description) > 100 else ''),
+                    font=("Arial", 10),
+                    bootstyle="inverse-secondary",
+                    wraplength=600
                 ).pack(anchor=W, pady=(5, 0))
 
             # Due date and points
@@ -668,7 +678,7 @@ class StudentDashboard:
 
             due_date = assignment.get('due_date', 'No due date')
             ttk.Label(
-               details_frame,
+                details_frame,
                 text=f"📅 Due: {due_date}",
                 font=("Arial", 10),
                 bootstyle="inverse-secondary"
@@ -699,91 +709,92 @@ class StudentDashboard:
                 bootstyle="success-outline",
                 command=lambda assignment=assignment: self.submit_assignment(assignment),
                 width=15
-            ).pack(side=RIGHT, padx=(5, 0))
+            ).pack(anchor=E, pady=(5, 0))
 
-             # Expand button
+            # Expand button
             ttk.Button(
                 info_frame,
                 text="🔍 Expand",
                 command=lambda assignment=assignment: self.show_expanded_view('assignment', {**assignment, 'class_id': self.selected_class['_id']}),
                 bootstyle="outline-secondary"
-            ).pack(pady=(5, 0))
+            ).pack(anchor=E, pady=(5, 0))
 
-    # Expand button added to the materials section
+
+        # Expand button added to the materials section
     def submit_assignment(self, assignment):
-        """Handle assignment submission by the student"""
-        from tkinter import filedialog, messagebox, simpledialog
-        import os
+            """Handle assignment submission by the student"""
+            from tkinter import filedialog, messagebox, simpledialog
+            import os
 
-        # Ensure the assignment object contains '_id'
-        if '_id' not in assignment:
-            messagebox.showerror("Error", "Assignment ID is missing")
-            return
+            # Ensure the assignment object contains '_id'
+            if '_id' not in assignment:
+                messagebox.showerror("Error", "Assignment ID is missing")
+                return
 
-        # Get user ID safely with fallbacks
-        user_id = None
-        if hasattr(self, 'user_data') and self.user_data:
-            user_id = (
-                self.user_data.get('_id') or 
-                self.user_data.get('id') or 
-                self.user_data.get('user_id') or 
-                self.user_data.get('userId')
-            )
+            # Get user ID safely with fallbacks
+            user_id = None
+            if hasattr(self, 'user_data') and self.user_data:
+                user_id = (
+                    self.user_data.get('_id') or 
+                    self.user_data.get('id') or 
+                    self.user_data.get('user_id') or 
+                    self.user_data.get('userId')
+                )
     
-        # If still no user_id, show error
-        if not user_id:
-            messagebox.showerror("Error", "User ID not found. Please login again.")
-            return
+             # If still no user_id, show error
+            if not user_id:
+                messagebox.showerror("Error", "User ID not found. Please login again.")
+                return
 
-        # Ask for optional text comment
-        text_content = simpledialog.askstring(
-            "Assignment Comment",
-            "Enter optional comments about your submission (or leave empty):",
-            parent=self.window
-        )
-
-        if text_content is None:  # User cancelled
-            return
-
-    # Ask for file
-        file_path = filedialog.askopenfilename(
-            title="Select file to submit",
-            filetypes=[("All Files", "*.*"), ("PDF Files", "*.pdf"), 
-                      ("Word Documents", "*.docx"), ("Text Files", "*.txt")]
-        )
-
-        if not file_path:  # User cancelled file selection
-            return
-
-        try:
-            with open(file_path, 'rb') as file:
-                file_content = file.read()  # Read the file content as binary
-
-            filename = os.path.basename(file_path)
-
-            print(f"[CLIENT DEBUG] Submitting assignment:")
-            print(f"  Assignment ID: {assignment['_id']}")
-            print(f"  User ID: {user_id}")
-            print(f"  Filename: {filename}")
-            print(f"  File size: {len(file_content)} bytes")
-            print(f"  Text content: '{text_content}'")
-
-            # Call the updated submit_assignment method with binary data
-            self.client.submit_assignment_gridfs(
-                assignment_id=assignment['_id'],
-                user_id=user_id,
-                file_content=file_content,
-                submission_text=text_content,
-                filename=filename
+             # Ask for optional text comment
+            text_content = simpledialog.askstring(
+                "Assignment Comment",
+                "Enter optional comments about your submission (or leave empty):",
+                parent=self.window
             )
+
+            if text_content is None:  # User cancelled
+                return
+
+        # Ask for file
+            file_path = filedialog.askopenfilename(
+                title="Select file to submit",
+                filetypes=[("All Files", "*.*"), ("PDF Files", "*.pdf"), 
+                          ("Word Documents", "*.docx"), ("Text Files", "*.txt")]
+            )
+
+            if not file_path:  # User cancelled file selection
+                return
+
+            try:
+                with open(file_path, 'rb') as file:
+                    file_content = file.read()  # Read the file content as binary
+
+                filename = os.path.basename(file_path)
+
+                print(f"[CLIENT DEBUG] Submitting assignment:")
+                print(f"  Assignment ID: {assignment['_id']}")
+                print(f"  User ID: {user_id}")
+                print(f"  Filename: {filename}")
+                print(f"  File size: {len(file_content)} bytes")
+                print(f"  Text content: '{text_content}'")
+
+                 # Call the updated submit_assignment method with binary data
+                self.client.submit_assignment_gridfs(
+                    assignment_id=assignment['_id'],
+                    user_id=user_id,
+                    file_content=file_content,
+                    submission_text=text_content,
+                    filename=filename
+                )
         
-            messagebox.showinfo("Success", "Assignment submitted! Processing with GridFS...")
+                messagebox.showinfo("Success", "Assignment submitted! Processing with GridFS...")
         
-        except Exception as e:
-            print(f"[CLIENT ERROR] Exception: {e}")
-            import traceback
-            traceback.print_exc()
-            messagebox.showerror("Error", f"An error occurred: {str(e)}")
+            except Exception as e:
+                print(f"[CLIENT ERROR] Exception: {e}")
+                import traceback
+                traceback.print_exc()
+                messagebox.showerror("Error", f"An error occurred: {str(e)}")
 
 
 
@@ -791,9 +802,9 @@ class StudentDashboard:
     def _display_materials(self):
         """Display materials in classwork tab - GridFS ONLY"""
         if not self.materials_container:
-            return
-   
-        # Clear existing widgets
+             return
+
+         # Clear existing widgets
         for widget in self.materials_container.winfo_children():
             widget.destroy()
 
@@ -812,13 +823,20 @@ class StudentDashboard:
         scrollbar = Scrollbar(self.materials_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas, bootstyle="dark")
 
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
+    # Create window FIRST
         window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    
+        # NOW define the function that uses window_id
+        def configure_scrollable(e):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            # Force the scrollable frame to match canvas width
+            canvas.itemconfig(window_id, width=e.width)
+
+        scrollable_frame.bind("<Configure>", configure_scrollable)
+    
         canvas.configure(yscrollcommand=scrollbar.set)
+    
+    # You can keep this binding too, or remove it since configure_scrollable already does it
         canvas.bind(
             "<Configure>",
             lambda e: canvas.itemconfig(window_id, width=e.width)
@@ -833,58 +851,56 @@ class StudentDashboard:
             file_id = material.get('file_id') or material.get('file_id_str')
             if not file_id:
                 continue
-        
+    
             material_frame = ttk.Frame(scrollable_frame, bootstyle="dark")
             material_frame.pack(fill=X, padx=10, pady=5)
-    
+
             # Material card
             card = ttk.Frame(material_frame, bootstyle="secondary", relief="raised")
-            card.pack(fill=X, padx=5, pady=5)
-    
+            card.pack(fill=X, padx=5, pady=5, expand=True)   
             # Material info
             info_frame = ttk.Frame(card, bootstyle="secondary")
-            info_frame.pack(fill=X, padx=15, pady=10)
-    
+            info_frame.pack(fill=X, padx=15, pady=10, expand=True)
+
             # Title and type
             title_text = material.get('title', 'Untitled')
             mat_type = material.get('material_type', 'Document')
             filename = material.get('filename', 'Material file')
             uploaded_at = material.get('uploaded_at', '')
             teacher_name = material.get('teacher_name', '')
-    
+
             # Header with title
             header_frame = ttk.Frame(info_frame, bootstyle="secondary")
             header_frame.pack(fill=X, anchor=W)
-    
+
             ttk.Label(
                 header_frame,
                 text=f"📎 {title_text}",
                 font=("Arial", 12, "bold"),
                 bootstyle="inverse-secondary"
             ).pack(side=LEFT)
-    
-            # SIMPLE Download button - works EXACTLY like submission download
+
+            
             def create_download_handler(fid, fname):
                 def handler():
-                    """Download material - EXACT SAME as submission download"""
-                    from tkinter import messagebox
-                
-                    print(f"[DEBUG] Downloading material: {fname}, file_id: {fid}")
-                
-                    # Send download request - EXACT SAME as submissions
+                    """Download material"""
+                    print(f"[DEBUG STUDENT] Downloading material: {fname}, file_id: {fid}")
+        
+                    # Send download request
                     result = self.client.download_file_binary(fid)
-                    
+        
                     if not result.get('success'):
+                        from tkinter import messagebox
                         messagebox.showerror("Error", f"Failed to start download: {result.get('error')}")
                     else:
-                        print(f"[DEBUG] Material download started successfully")
-                        # The file will come via _handle_server_message -> _save_downloaded_file
-                        # EXACTLY like submission downloads work
+                       print(f"[DEBUG STUDENT] Download request sent: {result.get('request_id')}")
+                    # DEFAULT IS SAVE MODE - no want_to_open attribute
+                    # This will trigger _save_downloaded_file in the handler
                 return handler
-    
+
             # Create download handler for this material
             download_handler = create_download_handler(file_id, filename)
-    
+
             # Download button - SAME as before but now it works
             ttk.Button(
                 header_frame,
@@ -893,7 +909,7 @@ class StudentDashboard:
                 command=download_handler,
                 width=12
             ).pack(side=RIGHT, padx=(10, 0))
-     
+ 
             # Material type
             ttk.Label(
                 info_frame,
@@ -901,7 +917,7 @@ class StudentDashboard:
                 font=("Arial", 10),
                 bootstyle="inverse-secondary"
             ).pack(anchor=W, pady=(5, 0))
-    
+
             # File info
             ttk.Label(
                 info_frame,
@@ -909,7 +925,7 @@ class StudentDashboard:
                 font=("Arial", 10),
                 bootstyle="inverse-secondary"
             ).pack(anchor=W, pady=(2, 0))
-    
+
             # Upload date
             if uploaded_at:
                 ttk.Label(
@@ -918,17 +934,17 @@ class StudentDashboard:
                     font=("Arial", 9),
                     bootstyle="inverse-secondary"
                 ).pack(anchor=W, pady=(2, 0))
-    
+
             # Teacher name (if available)
             if teacher_name:
                 ttk.Label(
                     info_frame,
                     text=f"By: {teacher_name}",
                     font=("Arial", 9, "italic"),
-                    bootstyle="inverse-secondary"
+                     bootstyle="inverse-secondary"
                 ).pack(anchor=W, pady=(2, 0))
-    
-            # Create expand handler with captured material
+
+        # Create expand handler with captured material
             def create_expand_handler(mat):
                 def handler():
                     self.show_expanded_view('material', {
@@ -936,9 +952,9 @@ class StudentDashboard:
                         'class_id': self.selected_class['_id']
                     })
                 return handler
-    
+
             expand_handler = create_expand_handler(material)
-    
+
             # Expand button
             ttk.Button(
                 info_frame,
@@ -1130,20 +1146,33 @@ class StudentDashboard:
         print(f"[DEBUG STUDENT] _handle_server_message: type={msg_type}, keys={message.keys()}")
         if msg_type == 'FILE_DOWNLOAD_COMPLETE':
             print(f"[DEBUG STUDENT] File download complete: {message.get('filename')}")
-        
+    
             binary_data = message.get('binary_data')
             filename = message.get('filename')
             request_id = message.get('request_id')
-        
+    
+            print(f"[DEBUG STUDENT] Request ID: {request_id}, Binary data size: {len(binary_data) if binary_data else 0}")
+    
             if binary_data and filename:
-                # Check if we want to open or save
+                # CRITICAL FIX: Use window.after() to prevent UI blocking
                 if hasattr(self, f'want_to_open_{request_id}'):
                     # Open the file
+                    print(f"[DEBUG STUDENT] Opening file: {filename}")
                     delattr(self, f'want_to_open_{request_id}')
-                    self._open_downloaded_file(filename, binary_data, request_id)
+                    # Use after() to schedule in main thread
+                    if self.window and self.window.winfo_exists():
+                        self.window.after(0, lambda: self._open_downloaded_file(filename, binary_data, request_id))
                 else:
-                    # Save the file
-                    self._save_downloaded_file(filename, binary_data, request_id)
+                    # Save the file - DEFAULT BEHAVIOR
+                    print(f"[DEBUG STUDENT] Saving file: {filename}")
+                    # Use after() to schedule in main thread
+                    if self.window and self.window.winfo_exists():
+                        self.window.after(0, lambda: self._save_downloaded_file(filename, binary_data, request_id))
+    
+            # Clear binary data from message to save memory
+            if 'binary_data' in message:
+                message['binary_data'] = b''
+    
             return
 
         
@@ -1321,90 +1350,131 @@ class StudentDashboard:
     def _handle_notification(self, notification):
         """Handle incoming real-time notification"""
         from datetime import datetime
-        
+        from tkinter import messagebox
+    
         print(f"[DEBUG] _handle_notification called with: {notification}")
-        
+    
         # Add to notification history
         notification['received_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.notification_history.insert(0, notification)  # Add to beginning
-        
+    
         print(f"[DEBUG] Notification history length: {len(self.notification_history)}")
-        
+    
         # Refresh notification page if currently viewing it
         if self.current_view == "notifications":
             self._show_email_notification_page()
-        
+    
         notif_type = notification.get('type', '')
-        
+    
         if notif_type == 'NEW_ASSIGNMENT':
             class_name = notification.get('class_name', 'Unknown Class')
             assignment_title = notification.get('assignment_title', 'New Assignment')
             due_date = notification.get('due_date', 'No due date')
             class_id = notification.get('class_id')
+        
+            # CRITICAL FIX: Refresh assignments if viewing that class
+            if (self.selected_class and 
+                self.selected_class.get('_id') == class_id and
+                hasattr(self, 'assignments_container') and 
+                self.assignments_container and
+                self.assignments_container.winfo_exists()):
             
+                print(f"[DEBUG STUDENT] Refreshing assignments for current class after notification")
+                # Refresh assignments instantly
+                self.client.view_assignments(class_id)
+        
             # If currently viewing To-Do page, refresh all assignments
             if self.current_view == "todo":
                 print(f"[DEBUG] Refreshing To-Do page for new assignment")
                 self.client.send_message('GET_STUDENT_ALL_ASSIGNMENTS', {})
-            # If currently viewing this class's assignments, refresh immediately
-            elif self.selected_class and self.selected_class.get('_id') == class_id:
-                if hasattr(self, 'assignments_container') and self.assignments_container:
-                    # Refresh assignments instantly
-                    self.client.view_assignments(class_id)
-            
+        
             # Show notification popup
-            result = messagebox.showinfo(
+            self.window.after(50, lambda: messagebox.showinfo(
                 "📚 New Assignment",
                 f"Class: {class_name}\n\n"
                 f"Assignment: {assignment_title}\n"
                 f"Due Date: {due_date}\n\n"
-                f"Check your classes to view details."
-            )
-            
+               f"Check your classes to view details."
+        ))
+        elif notif_type == 'NEW_MATERIAL':
+            class_name = notification.get('class_name', 'Unknown Class')
+            material_title = notification.get('material_title', 'New Material')
+            file_name = notification.get('file_name', 'Unknown file')
+            class_id = notification.get('class_id', '')
+
+            print(f"[DEBUG STUDENT] Received NEW_MATERIAL notification for class: {class_id}")
+
+            # MINIMAL FIX: Use same pattern as assignments
+            if (self.selected_class and 
+                self.selected_class.get('_id') == class_id and
+                hasattr(self, 'materials_container') and 
+                 self.materials_container and
+                self.materials_container.winfo_exists()):
+    
+                print(f"[DEBUG STUDENT] Refreshing materials for current class")
+                     # FIX: Schedule in main thread like assignments do
+                if hasattr(self, 'window') and self.window:
+                     self.window.after(0, lambda: self.client.view_materials(class_id))
+    
+            # Show notification popup
+            if self.window and self.window.winfo_exists():
+                self.window.after(50, lambda: self._show_notification_popup(
+                     "📎 New Material",
+                     f"Class: {class_name}\n\n"
+                     f"Material: {material_title}\n"
+                     f"File: {file_name}\n\n"
+                     f"Check your classes to download."
+                ))
+        
         elif notif_type == 'NEW_ANNOUNCEMENT':
             class_name = notification.get('class_name', 'Unknown Class')
             announcement_title = notification.get('announcement_title', 'New Announcement')
             class_id = notification.get('class_id')
-            
+        
             # If currently viewing this class's stream, refresh immediately for instant update
             if self.selected_class and self.selected_class.get('_id') == class_id:
                 # Cancel any pending refresh for this class
                 if class_id in self.pending_refresh:
                     self.window.after_cancel(self.pending_refresh[class_id])
                     del self.pending_refresh[class_id]
-                
+            
                 # Clear cache to force fresh data
                 if class_id in self.announcements_cache:
-                    del self.announcements_cache[class_id]
-                
-                # Refresh immediately (no delay) for instant appearance
+                   del self.announcements_cache[class_id]
+            
+            # Refresh immediately (no delay) for instant appearance
                 import time
                 self.last_refresh_time[class_id] = time.time()
                 self.client.view_announcements(class_id)
-            
+        
             # Show notification popup (fully async, non-blocking)
             self.window.after(50, lambda: self._show_notification_popup(
                 "📢 New Announcement",
                 f"Class: {class_name}\n\n{announcement_title}\n\nCheck your classes to view details."
             ))
-            
+        
         elif notif_type == 'NEW_MATERIAL':
             class_name = notification.get('class_name', 'Unknown Class')
             material_title = notification.get('material_title', 'New Material')
             file_name = notification.get('file_name', 'Unknown file')
             class_id = notification.get('class_id', '')
-            
+        
             # Refresh materials if viewing this class
-            if self.selected_class and self.selected_class.get('_id') == class_id:
+            if (self.selected_class and 
+                self.selected_class.get('_id') == class_id and
+                hasattr(self, 'materials_container') and 
+                self.materials_container and
+                self.materials_container.winfo_exists()):
+            
                 print(f"[DEBUG] Refreshing materials for current class")
                 self.client.view_materials(class_id)
-            
-            # Show notification popup (fully async)
+        
+             # Show notification popup (fully async)
             self.window.after(50, lambda: self._show_notification_popup(
                 "📎 New Material",
                 f"Class: {class_name}\n\nMaterial: {material_title}\nFile: {file_name}\n\nCheck your classes to download."
             ))
-            
+        
         elif notif_type == 'NEW_COMMENT':
             commenter_name = notification.get('commenter_name', 'Someone')
             item_type = notification.get('item_type', 'item')
@@ -1412,14 +1482,14 @@ class StudentDashboard:
             comment_preview = notification.get('comment_preview', '')
             item_id = notification.get('item_id')
             class_id = notification.get('class_id')
-            
+        
             print(f"[DEBUG NOTIFICATION] Received NEW_COMMENT: item_id={item_id}, item_type={item_type}")
             print(f"[DEBUG NOTIFICATION] current_expand_view exists: {self.current_expand_view is not None}")
             if self.current_expand_view:
                 current_item_id = self.current_expand_view.item_data.get('_id')
                 print(f"[DEBUG NOTIFICATION] current_item_id: {current_item_id}")
                 print(f"[DEBUG NOTIFICATION] IDs match: {current_item_id == item_id}")
-            
+        
             # Show notification popup and refresh comments after user clicks OK
             msg = f"💬 New Comment on {item_type.title()}\n\n"
             msg += f"Class: {class_name}\n"
@@ -1427,13 +1497,13 @@ class StudentDashboard:
             if comment_preview:
                 msg += f"Comment: {comment_preview[:50]}{'...' if len(comment_preview) > 50 else ''}\n\n"
             msg += "Check your classes to view and reply."
-            
+        
             # Check if currently viewing the expanded item
             should_refresh_comments = (self.current_expand_view and 
                 self.current_expand_view.item_data.get('_id') == item_id)
-            
+        
             print(f"[DEBUG NOTIFICATION] should_refresh_comments: {should_refresh_comments}")
-            
+        
             if should_refresh_comments:
                 print(f"[DEBUG] Will refresh comments after notification popup is dismissed")
                 # Schedule popup with callback to refresh comments after dismissal
@@ -1441,7 +1511,7 @@ class StudentDashboard:
             else:
                 # Just show popup without refreshing
                 self.window.after(50, lambda: self._show_notification_popup("💬 New Comment", msg))
-        
+    
         # Refresh notification page if currently viewing it
         if self.current_view == "notifications":
             self._show_email_notification_page()
@@ -1871,83 +1941,151 @@ class StudentDashboard:
 
     def _save_downloaded_file(self, filename, binary_data, request_id=None):
         """Save a downloaded file"""
+        print(f"[DEBUG STUDENT SAVE] _save_downloaded_file called: {filename}, data size: {len(binary_data) if binary_data else 0}")
+    
         from tkinter import filedialog, messagebox
-
+    
         try:
+            # CRITICAL: Validate binary data
+            if not binary_data:
+                print(f"[ERROR STUDENT SAVE] No binary data received")
+                messagebox.showerror("Error", "No file data received")
+                return
+        
+            if not isinstance(binary_data, bytes):
+                print(f"[ERROR STUDENT SAVE] Binary data is not bytes, type: {type(binary_data)}")
+                messagebox.showerror("Error", "File data is corrupted")
+                return
+        
+            print(f"[DEBUG STUDENT SAVE] Showing save dialog for: {filename}")
+        
+            # Ask user where to save
             save_path = filedialog.asksaveasfilename(
                 defaultextension="",
                 initialfile=filename,
                 filetypes=[("All Files", "*.*")]
             )
-    
+        
+            print(f"[DEBUG STUDENT SAVE] User selected path: {save_path}")
+        
             if save_path:
+                # Save the file
                 with open(save_path, 'wb') as f:
                     f.write(binary_data)
-        
+            
+                print(f"[DEBUG STUDENT SAVE] File saved successfully: {save_path}")
+            
                 messagebox.showinfo(
-                   "Success", 
-                    f"Downloaded:\n{filename}\nSize: {len(binary_data):,} bytes"
+                    "Success", 
+                    f"✅ File saved successfully!\n\n"
+                    f"📄 {filename}\n"
+                    f"📦 Size: {len(binary_data):,} bytes\n"
+                    f"📁 Location: {save_path}"
                 )
             else:
-                 messagebox.showinfo("Cancelled", "Download cancelled")
+               print(f"[DEBUG STUDENT SAVE] User cancelled save")
+               messagebox.showinfo("Cancelled", "Download cancelled")
+            
         except Exception as e:
-            messagebox.showerror("Error", f"Cannot save: {str(e)}")
+            print(f"[ERROR STUDENT SAVE] Exception: {e}")
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Cannot save file: {str(e)}")
 
     def _open_downloaded_file(self, filename, binary_data, request_id=None):
         """Open a downloaded file directly"""
+        print(f"[DEBUG STUDENT OPEN] _open_downloaded_file called: {filename}, data size: {len(binary_data) if binary_data else 0}")
+    
         from tkinter import messagebox
         import tempfile
         import os
         import subprocess
         import sys
-
+    
         try:
+            # CRITICAL: Validate binary data
+            if not binary_data:
+                print(f"[ERROR STUDENT OPEN] No binary data received")
+                messagebox.showerror("Error", "No file data received")
+                return
+        
+            if not isinstance(binary_data, bytes):
+                print(f"[ERROR STUDENT OPEN] Binary data is not bytes, type: {type(binary_data)}")
+                messagebox.showerror("Error", "File data is corrupted")
+                return
+        
             # Make sure filename is a string
             if not isinstance(filename, str):
                 filename = str(filename) if filename else "download.bin"
-    
-            # Get file extension
-            _, ext = os.path.splitext(filename)
-            if not ext:
-                ext = '.bin'  # Default extension
-    
-             # Create temp file
+        
+            # Create temp file
+            import tempfile
             with tempfile.NamedTemporaryFile(
-               delete=False, 
-               suffix=ext,
-               prefix='submission_'
-           ) as tmp:
-               tmp.write(binary_data)
-               temp_path = tmp.name
-    
-            print(f"[DEBUG] Saved temp file: {temp_path}")
-    
-             # Open the file with default application
+                delete=False, 
+                suffix=os.path.splitext(filename)[1] or '.bin',
+                prefix='download_'
+            ) as tmp:
+                tmp.write(binary_data)
+                temp_path = tmp.name
+        
+            print(f"[DEBUG STUDENT OPEN] Saved temp file: {temp_path}")
+        
+            # Open the file with default application
             try:
-                if os.name == 'nt':  # Windows
+               if os.name == 'nt':  # Windows
                     os.startfile(temp_path)
-                    message = f"Opening file: {filename}"
-                elif sys.platform == 'darwin':  # macOS
+                    message = f"✅ Opening file: {filename}"
+               elif sys.platform == 'darwin':  # macOS
                     subprocess.run(['open', temp_path], check=True)
-                    message = f"Opening file: {filename}"
-                else:  # Linux
+                    message = f"✅ Opening file: {filename}"
+               else:  # Linux
                     subprocess.run(['xdg-open', temp_path], check=True)
-                    message = f"Opening file: {filename}"
-            except:
-                message = f"File saved to: {temp_path}\n\nPlease open it manually."
-    
-            messagebox.showinfo(
-               "Success", 
-               f"{message}\n\n"
-                f"Size: {len(binary_data):,} bytes\n"
-                f"Note: This is a temporary copy"
-            )
-    
+                    message = f"✅ Opening file: {filename}"
+            
+               messagebox.showinfo(
+                    "Success", 
+                    f"{message}\n\n"
+                   f"📄 {filename}\n"
+                    f"📦 Size: {len(binary_data):,} bytes\n"
+                    f"📁 Temporary file: {temp_path}"
+                )
+            
+            except Exception as open_error:
+                print(f"[DEBUG STUDENT OPEN] Could not open directly: {open_error}")
+                messagebox.showinfo(
+                    "File Saved", 
+                    f"📄 {filename}\n"
+                    f"📦 Size: {len(binary_data):,} bytes\n"
+                    f"📁 Saved to temporary location:\n{temp_path}\n\n"
+                    f"Please open it manually from this location."
+                )
+        
         except Exception as e:
-            messagebox.showerror(
-                "Error", 
-                f"Cannot open file: {str(e)}\n\n"
-                f"File has been downloaded. You can open it manually."
-            )
+            print(f"[ERROR STUDENT OPEN] Exception: {e}")
             import traceback
             traceback.print_exc()
+            messagebox.showerror("Error", f"Cannot open file: {str(e)}")
+
+    def _refresh_current_class_view(self):
+        """Refresh all data for the currently selected class"""
+        if not self.selected_class:
+            return
+    
+        class_id = self.selected_class['_id']
+        print(f"[DEBUG] Refreshing all data for class: {class_id}")
+    
+        # Refresh announcements
+        if hasattr(self, 'stream_container'):
+            self.client.view_announcements(class_id)
+    
+        # Refresh assignments if assignments tab exists
+        if (hasattr(self, 'assignments_container') and 
+            self.assignments_container and
+            self.assignments_container.winfo_exists()):
+            self.client.view_assignments(class_id)
+     
+        # Refresh materials if materials tab exists
+        if (hasattr(self, 'materials_container') and 
+            self.materials_container and
+            self.materials_container.winfo_exists()):
+            self.client.view_materials(class_id)
