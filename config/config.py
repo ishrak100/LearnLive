@@ -8,8 +8,8 @@ load_dotenv()
 # Server Configuration
 SERVER_HOST = '0.0.0.0'  # Listen on all interfaces (for LAN)
 SERVER_PORT = 8888
-BUFFER_SIZE = 4096
-MAX_CLIENTS = 50
+BUFFER_SIZE = 65536 
+MAX_CLIENTS = 5000
 
 # MongoDB Configuration
 MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')

@@ -314,77 +314,37 @@ class LearnLiveClient:
             "class_id": class_id
         })
     
-    def submit_assignment_gridfs(self, assignment_id, user_id, file_content, submission_text="", filename=None):
-        """ Submit assignment with GridFS storage using binary protocol.Sends metadata as JSON first, then raw binary data."""
-        # Create a unique request ID to track this specific request
-        request_id = str(uuid.uuid4())[:8]
+    def submit_assignment_gridfs(self, assignment_id, user_id, file_content, filename=None):
+        """Submit assignment with GridFS storage using binary protocol (identical to material upload)"""
     
-        # Step 1: Send metadata as JSON
+        if filename is None:
+            filename = "assignment_submission.bin"
+
+        print(f"[CLIENT ASSIGNMENT] Submitting assignment: {assignment_id}, size: {len(file_content)} bytes")
+    
         data_payload = {
             "assignment_id": assignment_id,
             "user_id": user_id,
-            "submission_text": submission_text,
-            "filename": filename or "",
+            "filename": filename,
             "file_size": len(file_content),
-            "request_id": request_id  # Put request_id inside data
+            "user_role": "student"  # ← CRITICAL: Add user_role like material upload
         }
+
+        send_success = self.send_message("SUBMIT_ASSIGNMENT_GRIDFS", data_payload)
+        if not send_success:
+           print("[CLIENT ASSIGNMENT ERROR] Failed to send metadata")
+           return {'success': False, 'error': 'Failed to send metadata'}
+
+        print(f"[CLIENT ASSIGNMENT] Metadata sent, sending {len(file_content)} bytes of binary data")
     
-        print(f"[CLIENT GRIDFS] Sending metadata: {data_payload}")
-    
-        # Create a temporary callback to capture the response
-        response_received = {"result": None}
-    
-        def gridfs_response_callback(response):
-            response_received["result"] = response
-            print(f"[CLIENT GRIDFS] Received response for request {request_id}: {response}")
-    
-        # Temporarily set callback to capture this specific response
-        original_callback = self.message_callback
-        self.set_message_callback(gridfs_response_callback)
-     
         try:
-            # Send metadata message
-            send_success = self.send_message("SUBMIT_ASSIGNMENT_GRIDFS", data_payload)
-        
-            if not send_success:
-                print(f"[CLIENT GRIDFS ERROR] Failed to send metadata")
-                return {'type': 'ERROR', 'error': 'Failed to send metadata'}
-        
-            print(f"[CLIENT GRIDFS] Metadata accepted, sending {len(file_content)} bytes of binary data")
-        
-            # Step 2: Send raw binary data (NO encoding)
-            try:
-                # Send binary data directly
-                self.socket.sendall(file_content)
-                print(f"[CLIENT GRIDFS] Binary data sent successfully")
-            
-                # Wait for response (with timeout)
-                timeout = 10  # 10 seconds timeout
-                start_time = time.time()
-            
-                while response_received["result"] is None and time.time() - start_time < timeout:
-                    time.sleep(0.1)  # Small delay to avoid busy waiting
-            
-                # Restore original callback
-                self.set_message_callback(original_callback)
-            
-                if response_received["result"]:
-                    return response_received["result"]
-                else:
-                    print(f"[CLIENT GRIDFS ERROR] No response received within timeout")
-                    return {'type': 'ERROR', 'error': 'No response from server'}
-                
-            except Exception as e:
-                print(f"[CLIENT GRIDFS ERROR] Failed to send binary data: {e}")
-                # Restore original callback
-                self.set_message_callback(original_callback)
-                return {'type': 'ERROR', 'error': f'Failed to send binary data: {str(e)}'}
-            
+            self.socket.sendall(file_content)
+            print("[CLIENT ASSIGNMENT] Binary data sent successfully")
+            return {'success': True}  # ← Fire-and-forget, no waiting for response
+
         except Exception as e:
-            print(f"[CLIENT GRIDFS ERROR] General error: {e}")
-            # Restore original callback
-            self.set_message_callback(original_callback)
-            return {'type': 'ERROR', 'error': f'General error: {str(e)}'}
+            print(f"[CLIENT ASSIGNMENT ERROR] Failed to send binary data: {e}")
+            return {'success': False, 'error': f'Failed to send binary data: {str(e)}'}
     
     def view_submissions(self, assignment_id: str) -> bool:
         """View submissions for an assignment (teacher only)."""
@@ -559,81 +519,43 @@ class LearnLiveClient:
             print(f"[CLIENT DOWNLOAD ERROR] {e}")
             self.pending_download = None
             return {'success': False, 'error': str(e)}
+     
         
     def upload_material_gridfs(self, class_id, teacher_id, title, material_type, file_content, filename=None):
-        """Upload material with GridFS storage using binary protocol"""
-        import uuid
-        import time
-    
-        # Create a unique request ID
-        request_id = str(uuid.uuid4())[:8]
-    
-        # Get filename from path if not provided
+        """Upload material with GridFS storage using binary protocol (NON-BLOCKING, assignment-style)"""
+
         if filename is None:
             filename = "material.bin"
-    
+
         print(f"[CLIENT MATERIAL] Uploading material: {title}, size: {len(file_content)} bytes")
     
-        # Create metadata
+         
         data_payload = {
             "class_id": class_id,
             "teacher_id": teacher_id,
             "title": title,
             "material_type": material_type,
-           "filename": filename,
-           "file_size": len(file_content),
-            "request_id": request_id,
-            "user_role": "teacher"  # Add user role for server validation
+            "filename": filename,
+            "file_size": len(file_content),
+            "user_role": "teacher"
         }
-    
-        # Create a temporary callback to capture the response
-        response_received = {"result": None}
-    
-        def material_response_callback(response):
-            response_received["result"] = response
-            print(f"[CLIENT MATERIAL] Received response for request {request_id}: {response}")
-    
-        # Temporarily set callback
-        original_callback = self.message_callback
-        self.set_message_callback(material_response_callback)
-    
+
+        
+        send_success = self.send_message("UPLOAD_MATERIAL_GRIDFS", data_payload)
+        if not send_success:
+            print("[CLIENT MATERIAL ERROR] Failed to send metadata")
+            return {'success': False, 'error': 'Failed to send metadata'}
+
+        print(f"[CLIENT MATERIAL] Metadata sent, sending {len(file_content)} bytes of binary data")
+
+        
         try:
-            # Send metadata message
-            send_success = self.send_message("UPLOAD_MATERIAL_GRIDFS", data_payload)
-         
-            if not send_success:
-                print(f"[CLIENT MATERIAL ERROR] Failed to send metadata")
-                return {'type': 'ERROR', 'error': 'Failed to send metadata'}
-        
-            print(f"[CLIENT MATERIAL] Metadata accepted, sending {len(file_content)} bytes of binary data")
-        
-            # Send raw binary data
-            try:
-                self.socket.sendall(file_content)
-                print(f"[CLIENT MATERIAL] Binary data sent successfully")
-            
-                # Wait for response
-                timeout = 10
-                start_time = time.time()
-            
-                while response_received["result"] is None and time.time() - start_time < timeout:
-                   time.sleep(0.1)
-            
-                # Restore original callback
-                self.set_message_callback(original_callback)
-            
-                if response_received["result"]:
-                    return response_received["result"]
-                else:
-                    print(f"[CLIENT MATERIAL ERROR] No response received within timeout")
-                    return {'type': 'ERROR', 'error': 'No response from server'}
-                
-            except Exception as e:
-                print(f"[CLIENT MATERIAL ERROR] Failed to send binary data: {e}")
-                self.set_message_callback(original_callback)
-                return {'type': 'ERROR', 'error': f'Failed to send binary data: {str(e)}'}
-            
+            self.socket.sendall(file_content)
+            print("[CLIENT MATERIAL] Binary data sent successfully")
+
+
+            return {'success': True}
+
         except Exception as e:
-            print(f"[CLIENT MATERIAL ERROR] General error: {e}")
-            self.set_message_callback(original_callback)
-            return {'type': 'ERROR', 'error': f'General error: {str(e)}'}
+            print(f"[CLIENT MATERIAL ERROR] Failed to send binary data: {e}")
+            return {'success': False, 'error': f'Failed to send binary data: {str(e)}'}

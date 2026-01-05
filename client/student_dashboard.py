@@ -746,15 +746,7 @@ class StudentDashboard:
                 messagebox.showerror("Error", "User ID not found. Please login again.")
                 return
 
-             # Ask for optional text comment
-            text_content = simpledialog.askstring(
-                "Assignment Comment",
-                "Enter optional comments about your submission (or leave empty):",
-                parent=self.window
-            )
-
-            if text_content is None:  # User cancelled
-                return
+           
 
         # Ask for file
             file_path = filedialog.askopenfilename(
@@ -777,14 +769,13 @@ class StudentDashboard:
                 print(f"  User ID: {user_id}")
                 print(f"  Filename: {filename}")
                 print(f"  File size: {len(file_content)} bytes")
-                print(f"  Text content: '{text_content}'")
+              
 
                  # Call the updated submit_assignment method with binary data
                 self.client.submit_assignment_gridfs(
                     assignment_id=assignment['_id'],
                     user_id=user_id,
                     file_content=file_content,
-                    submission_text=text_content,
                     filename=filename
                 )
         

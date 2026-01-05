@@ -247,28 +247,29 @@ LearnLive Team
     
     def notify_material_uploaded(self, class_data, material_title, file_name, student_emails):
         """
-        Notify students when teacher uploads material/file
+        Notify ALL class members (students + teacher) when teacher uploads material/file
         Sends both email and TCP notifications
         """
         class_name = class_data.get('class_name', 'Unknown Class')
         class_id = class_data.get('_id', '')
-        
+        teacher_id = class_data.get('teacher_id', '')
+    
         subject = f"📎 New Material: {material_title}"
         body = f"""
-Hello Student,
+    Hello Student,
 
-New learning material has been uploaded to your class!
+    New learning material has been uploaded to your class!
 
-Class: {class_name}
-Material: {material_title}
-File: {file_name}
+    Class: {class_name}
+    Material: {material_title}
+    File: {file_name}
 
-Login to LearnLive to download and view the material.
+    Login to LearnLive to download and view the material.
 
-Best regards,
-LearnLive Team
+    Best regards,
+    LearnLive Team
         """
-        
+    
         notification_data = {
             'type': 'NEW_MATERIAL',
             'class_id': class_id,
@@ -277,26 +278,30 @@ LearnLive Team
             'file_name': file_name,
             'timestamp': ''
         }
-        
-        # Send email to all students
+    
+         # Send email to all students
         for email in student_emails:
             self.send_email(email, subject, body)
-        
-        # Get student IDs and send TCP notifications to online students
-        student_ids = class_data.get('students', [])
-        
+    
+        # Get ALL recipient IDs (students + teacher)
+        recipient_ids = class_data.get('students', []).copy()
+    
+        # Add teacher ID if exists and not already in list
+        if teacher_id and teacher_id not in recipient_ids:
+            recipient_ids.append(teacher_id)
+    
         # Save all notifications in batch (database operation)
-        for student_id in student_ids:
-            self.db.save_notification(student_id, notification_data)
-        
-        # Send TCP notifications to online students only
+        for user_id in recipient_ids:
+            self.db.save_notification(user_id, notification_data)
+    
+        # Send TCP notifications to online users only
         online_count = 0
-        for student_id in student_ids:
-            result = self.send_tcp_notification(student_id, notification_data)
+        for user_id in recipient_ids:
+            result = self.send_tcp_notification(user_id, notification_data)
             if result:
                 online_count += 1
-        
-        print(f"📧 Material upload notifications sent: {material_title} ({online_count}/{len(student_ids)} online)")
+    
+        print(f"📧 Material upload notifications sent: {material_title} ({online_count}/{len(recipient_ids)} online, includes teacher)")
         return True
     
     def notify_student_joined(self, class_code, student_email):

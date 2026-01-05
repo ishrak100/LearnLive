@@ -300,7 +300,7 @@ class TeacherDashboard:
             header,
             text=f"📝 {submission.get('assignment_title', 'Assignment')}",
             font=("Arial", 14, "bold"),
-            bootstyle="inverse-secondary"
+            bootstyle="secondary"
         ).pack(side=LEFT)
         
         ttk.Label(
@@ -318,7 +318,7 @@ class TeacherDashboard:
             info_frame,
             text=f"👤 Student: {submission.get('student_name', 'Unknown')}",
             font=("Arial", 12),
-            bootstyle="inverse-secondary"
+            bootstyle="secondary"
         ).pack(side=LEFT)
         
         ttk.Label(
@@ -338,7 +338,7 @@ class TeacherDashboard:
                 file_frame,
                 text=f"📎 {filename}",
                 font=("Arial", 11),
-                bootstyle="info"
+                bootstyle="secondary"
             ).pack(side=LEFT)
             
             ttk.Button(
@@ -486,7 +486,7 @@ class TeacherDashboard:
                 content,
                 text=f"📋 Section: {section}",
                 font=("Arial", 10),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(anchor=W, padx=15, pady=(15, 5))
         
         # Room
@@ -496,21 +496,21 @@ class TeacherDashboard:
                 content,
                 text=f"🚪 Room: {room}",
                 font=("Arial", 10),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(anchor=W, padx=15, pady=(0, 5))
         
         ttk.Label(
             content,
             text=f"Class Code: {cls.get('class_code', 'N/A')}",
             font=("Arial", 10),
-            bootstyle="inverse-secondary"
+            bootstyle="secondary"
         ).pack(anchor=W, padx=15, pady=(0, 5))
         
         ttk.Label(
             content,
             text=f"Students: {len(cls.get('students', []))}",
             font=("Arial", 10),
-            bootstyle="inverse-secondary"
+            bootstyle="secondary"
         ).pack(anchor=W, padx=15, pady=(0, 15))
         
         # Click handler
@@ -541,7 +541,7 @@ class TeacherDashboard:
             empty_frame,
             text="Create your first class to get started",
             font=("Arial", 12),
-            bootstyle="inverse-secondary"
+            bootstyle="secondary"
         ).pack(pady=(0, 20))
         
         ttk.Button(
@@ -675,7 +675,7 @@ class TeacherDashboard:
             self.stream_container,
             text="Loading announcements...",
             font=("Arial", 11),
-            bootstyle="inverse-secondary"
+            bootstyle="secondary"
         ).pack(padx=20, pady=20)
     
     def _update_stream_display(self):
@@ -698,7 +698,7 @@ class TeacherDashboard:
                 self.stream_container,
                 text="No announcements yet",
                 font=("Arial", 11),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(padx=20, pady=20)
             print("[DEBUG] Displayed 'No announcements' message")
             return
@@ -722,7 +722,7 @@ class TeacherDashboard:
                 frame,
                 text=announcement.get('content', ''),
                 font=("Arial", 11),
-                bootstyle="inverse-secondary",
+                bootstyle="secondary",
                 wraplength=700
             ).pack(anchor=W, pady=(0, 5))
         
@@ -740,7 +740,7 @@ class TeacherDashboard:
                     frame,
                     text=formatted_date,
                     font=("Arial", 9),
-                    bootstyle="inverse-secondary"
+                    bootstyle="secondary"
                 ).pack(anchor=W)
         
             # Expand button
@@ -833,7 +833,7 @@ class TeacherDashboard:
                 self.materials_container,
                 text="No materials uploaded yet",
                 font=("Arial", 11),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(padx=20, pady=20)
             return
     
@@ -891,7 +891,7 @@ class TeacherDashboard:
                 header_frame,
                 text=f"📎 {title_text}",
                 font=("Arial", 12, "bold"),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(side=LEFT)
         
                 # Create a closure factory to capture current values
@@ -934,7 +934,7 @@ class TeacherDashboard:
                 info_frame,
                 text=f"Type: {mat_type}",
                 font=("Arial", 10),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(anchor=W, pady=(5, 0))
         
             # File info
@@ -942,7 +942,7 @@ class TeacherDashboard:
                 info_frame,
                 text=f"File: {filename}",
                 font=("Arial", 10),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(anchor=W, pady=(2, 0))
         
             # Upload date
@@ -951,7 +951,7 @@ class TeacherDashboard:
                     info_frame,
                     text=f"Uploaded: {uploaded_at}",
                     font=("Arial", 9),
-                    bootstyle="inverse-secondary"
+                    bootstyle="secondary"
                 ).pack(anchor=W, pady=(2, 0))
         
             # Teacher name (if available)
@@ -960,7 +960,7 @@ class TeacherDashboard:
                     info_frame,
                     text=f"By: {teacher_name}",
                     font=("Arial", 9, "italic"),
-                    bootstyle="inverse-secondary"
+                    bootstyle="secondary"
                 ).pack(anchor=W, pady=(2, 0))
         
             # Create expand handler with captured material
@@ -997,7 +997,7 @@ class TeacherDashboard:
                 self.assignments_container,
                 text="No assignments created yet",
                 font=("Arial", 11),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(padx=20, pady=20)
             return
         
@@ -1042,7 +1042,7 @@ class TeacherDashboard:
                 info_frame,
                 text=f"📝 {title_text}",
                 font=("Arial", 12, "bold"),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(anchor=W)
             
             # Description
@@ -1052,7 +1052,7 @@ class TeacherDashboard:
                     info_frame,
                     text=description[:100] + ('...' if len(description) > 100 else ''),
                     font=("Arial", 10),
-                    bootstyle="inverse-secondary",
+                    bootstyle="secondary",
                     wraplength=600
                 ).pack(anchor=W, pady=(5, 0))
             
@@ -1065,7 +1065,7 @@ class TeacherDashboard:
                 details_frame,
                 text=f"📅 Due: {due_date}",
                 font=("Arial", 10),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(side=LEFT, padx=(0, 20))
             
             max_points = assignment.get('max_points', 0)
@@ -1073,7 +1073,7 @@ class TeacherDashboard:
                 details_frame,
                 text=f"💯 Points: {max_points}",
                 font=("Arial", 10),
-                bootstyle="inverse-secondary"
+                bootstyle="secondary"
             ).pack(side=LEFT)
             
             # Created date
@@ -1083,7 +1083,7 @@ class TeacherDashboard:
                     info_frame,
                     text=f"Created: {created_at}",
                     font=("Arial", 9),
-                    bootstyle="inverse-secondary"
+                    bootstyle="secondary"
                 ).pack(anchor=W, pady=(2, 0))
             
             # View Submissions button
@@ -1124,7 +1124,7 @@ class TeacherDashboard:
             teacher_frame,
             text=f"👤 {teacher_name}",
             font=("Arial", 12),
-            bootstyle="inverse-secondary"
+            bootstyle="secondary"
         ).pack(anchor=W, padx=15, pady=10)
         
         # Students section
@@ -1588,7 +1588,7 @@ class TeacherDashboard:
             if not material_name:
                 messagebox.showerror("Error", "Material name is required")
                 return
-
+ 
             if not file_path:
                 messagebox.showerror("Error", "File path is required")
                 return
@@ -1604,23 +1604,23 @@ class TeacherDashboard:
             # Get filename from path
             import os
             filename = os.path.basename(file_path)
-            
+        
             # Get teacher ID from user data (handle different key names)
             teacher_id = self.user_data.get('user_id') or self.user_data.get('_id')
             if not teacher_id:
                 messagebox.showerror("Error", "Teacher ID not found in user data")
                 return
 
-            # Show uploading message
+             # Show uploading message
             uploading_label = ttk.Label(
                 dialog,
-                text="⏳ Uploading material...",
+                 text="⏳ Uploading material...",
                 font=("Arial", 10, "italic"),
                 bootstyle="info"
             )
             uploading_label.pack(pady=10)
             dialog.update()
-            
+        
             # Send the file using GridFS upload
             result = self.client.upload_material_gridfs(
                 class_id=self.selected_class['_id'],
@@ -1630,24 +1630,19 @@ class TeacherDashboard:
                 file_content=file_content,
                 filename=filename
             )
-            
+        
             # Remove uploading message
             uploading_label.destroy()
-            
-            # Check result
-            if result.get('type') == 'ERROR':
-                messagebox.showerror("Upload Failed", result.get('error', 'Unknown error'))
-            elif result.get('success'):
-                messagebox.showinfo("Success", "Material uploaded successfully!")
+        
+            # Check result - SIMPLIFIED: Just close dialog on success
+            if result and result.get('success'):
+                # Just close dialog - notification will handle refresh and success message
                 dialog.destroy()
-                
-                # Refresh materials display
-                if hasattr(self, 'materials_container'):
-                    self._display_materials()
             else:
-                messagebox.showerror("Upload Failed", "Unknown error occurred")
+                error_msg = result.get('error', 'Unknown error occurred') if result else 'No response from server'
+                messagebox.showerror("Upload Failed", error_msg)
 
-        # Buttons
+         # Buttons
         btn_frame = ttk.Frame(frame, bootstyle="dark")
         btn_frame.pack(fill=X, pady=(10, 0))
 
@@ -1662,11 +1657,11 @@ class TeacherDashboard:
 
         cancel_btn = ttk.Button(
             btn_frame,
-            text="Cancel",
-            bootstyle="secondary",
-            command=dialog.destroy,
+             text="Cancel",
+             bootstyle="secondary",
+             command=dialog.destroy,
             width=15
-        )
+         )
         cancel_btn.pack(side=LEFT)
 
         # Center the dialog
@@ -1676,7 +1671,7 @@ class TeacherDashboard:
         x = (dialog.winfo_screenwidth() // 2) - (width // 2)
         y = (dialog.winfo_screenheight() // 2) - (height // 2)
         dialog.geometry(f'{width}x{height}+{x}+{y}')
-        
+    
         # Focus on name field
         name_entry.focus_set()
 
@@ -1801,6 +1796,7 @@ class TeacherDashboard:
                     if class_id in self.announcements_cache:
                         del self.announcements_cache[class_id]
                     self.client.view_announcements(class_id)
+                    print(f"[DEBUG] Announcement posted, reloading announcements for class: {class_id}")
             elif "assignment_id" in message:
                 # Handle CREATE_ASSIGNMENT response
                 # CRITICAL FIX: Refresh assignments after creation
@@ -1823,18 +1819,24 @@ class TeacherDashboard:
                     print(f"[DEBUG] Refreshing To-Get page after assignment creation")
                     self.window.after(100, lambda: self.client.send_message('GET_TEACHER_SUBMISSIONS', {}))
             elif "material_id" in message:
-                # Handle UPLOAD_MATERIAL response
+                 # Handle UPLOAD_MATERIAL response - WORKING VERSION (like assignments)
+                print(f"[DEBUG TEACHER] Material uploaded, refreshing materials")
+    
                 if hasattr(self, 'upload_dialog') and self.upload_dialog:
                     self.upload_dialog.destroy()
                     self.upload_dialog = None
+
+                     # Show success message
                 self.window.after(50, lambda: messagebox.showinfo("Success", "Material uploaded successfully!"))
+
+                # REFRESH MATERIALS IMMEDIATELY (EXACTLY like assignments work)
                 if (self.selected_class and 
                     hasattr(self, 'materials_container') and 
                     self.materials_container and
                     self.materials_container.winfo_exists()):
-                
-                    # Refresh materials list
-                    self.window.after(100, lambda: self.client.view_materials(self.selected_class['_id']))
+
+                   print(f"[DEBUG TEACHER] Refreshing materials for current class")
+                   self.window.after(100, lambda: self.client.view_materials(self.selected_class['_id']))
             elif "announcements" in message:
                 # Handle VIEW_ANNOUNCEMENTS response
                 print(f"[DEBUG] Received announcements: count={len(message.get('announcements', []))}")
@@ -2043,11 +2045,27 @@ class TeacherDashboard:
                     import traceback
                     traceback.print_exc()
                     messagebox.showerror("Error", f"File operation failed: {str(e)}")    
-        
+            elif "material_id" in message:
+                # Handle UPLOAD_MATERIAL response - MINIMAL FIX ADDED HERE
+                 if hasattr(self, 'upload_dialog') and self.upload_dialog:
+                    self.upload_dialog.destroy()
+                    self.upload_dialog = None
+    
+                 # Show success message
+                 self.window.after(50, lambda: messagebox.showinfo("Success", "Material uploaded successfully!"))
+     
+                # MINIMAL FIX: Refresh materials list for the class view (just like assignments)
+                 if (self.selected_class and 
+                    hasattr(self, 'materials_container') and 
+                    self.materials_container and
+                    self.materials_container.winfo_exists()):
+    
+                    print(f"[DEBUG TEACHER] Refreshing materials for current class")
+                    self.window.after(100, lambda: self.client.view_materials(self.selected_class['_id']))
         
 
             elif "comments" in message:
-                # Handle VIEW_COMMENTS response
+                   # Handle VIEW_COMMENTS response
                 if self.current_expand_view:
                     self.current_expand_view.comments = message.get("comments", [])
                     self.current_expand_view._update_comments_display()
@@ -2141,7 +2159,7 @@ class TeacherDashboard:
             
             # Show login screen again
             from client.login_gui import LoginWindow
-            from client.client import LearnLiveClient
+            from client.utility import LearnLiveClient
             
             # Create new client and login window
             new_client = LearnLiveClient()
@@ -2172,7 +2190,7 @@ class TeacherDashboard:
             dialog,
             text=f"Student Submissions for: {assignment_title}",
             font=("Arial", 14, "bold"),
-            bootstyle="inverse-light"
+            bootstyle="dark"
         ).pack(padx=20, pady=20)
         
         # Fetch submissions from server
@@ -2181,7 +2199,7 @@ class TeacherDashboard:
         
         # Create scrollable frame for submissions
         from tkinter import Canvas, Scrollbar
-        canvas = Canvas(dialog, bg='#222222', highlightthickness=0)
+        canvas = Canvas(dialog, bg="#000000", highlightthickness=0)
         scrollbar = Scrollbar(dialog, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas, bootstyle="dark")
         
@@ -2211,7 +2229,7 @@ class TeacherDashboard:
             scrollable_frame,
             text="Loading submissions...",
             font=("Arial", 11),
-            bootstyle="inverse-secondary"
+            bootstyle="dark"
         ).pack(padx=20, pady=20)
         
         # Close button
@@ -2219,7 +2237,7 @@ class TeacherDashboard:
             dialog,
             text="Close",
             command=dialog.destroy,
-            bootstyle="secondary",
+            bootstyle="dark",
             width=15
         ).pack(pady=(0, 20))
     
@@ -2240,16 +2258,16 @@ class TeacherDashboard:
                     dialog.submissions_frame,
                     text="No submissions yet",
                     font=("Arial", 11),
-                    bootstyle="inverse-secondary"
+                    bootstyle="dark"
                 ).pack(padx=20, pady=20)
                 return
 
             # Display each submission
             for submission in submissions:
-                sub_frame = ttk.Frame(dialog.submissions_frame, bootstyle="secondary", relief="raised")
+                sub_frame = ttk.Frame(dialog.submissions_frame, bootstyle="dark")
                 sub_frame.pack(fill=X, padx=10, pady=5)
-    
-                info_frame = ttk.Frame(sub_frame, bootstyle="secondary")
+
+                info_frame = ttk.Frame(sub_frame, bootstyle="dark")
                 info_frame.pack(fill=X, padx=15, pady=10)
     
                 # Student name
@@ -2258,7 +2276,7 @@ class TeacherDashboard:
                     info_frame,
                     text=f"👤 {student_name}",
                     font=("Arial", 12, "bold"),
-                    bootstyle="inverse-secondary"
+                    bootstyle="dark"
                 ).pack(anchor=W)
     
                  # Submitted date
@@ -2268,7 +2286,7 @@ class TeacherDashboard:
                         info_frame,
                         text=f"📅 Submitted: {submitted_at}",
                         font=("Arial", 10),
-                        bootstyle="inverse-secondary"
+                        bootstyle="dark"
                     ).pack(anchor=W, pady=(5, 0))
     
                 # Text content (if any)
@@ -2292,7 +2310,7 @@ class TeacherDashboard:
                         file_frame,
                         text="📎 Submitted File:",
                         font=("Arial", 10, "bold"),
-                        bootstyle="inverse-secondary"
+                        bootstyle="dark"
                     ).pack(side=LEFT, padx=(0, 10))
         
                     # Store submission data for button handlers
