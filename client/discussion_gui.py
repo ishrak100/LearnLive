@@ -132,6 +132,16 @@ class DiscussionGUI:
         )
         self.send_button.pack(side=tk.RIGHT)
         
+        # Attach button
+        self.attach_button = ttk.Button(
+            input_frame,
+            text="Attach",
+            bootstyle="secondary",
+            command=self.attach_file,
+            width=10
+        )
+        self.attach_button.pack(side=tk.RIGHT, padx=(0,6))
+        
         # Bind Enter key (Ctrl+Enter or Cmd+Enter to send)
         self.message_input.bind("<Control-Return>", lambda e: self.send_message())
         self.message_input.bind("<Command-Return>", lambda e: self.send_message())
@@ -148,7 +158,9 @@ class DiscussionGUI:
     
     def _register_message_handlers(self):
         """Register handlers for server message responses"""
-        pass
+        # The main application registers a central message callback that will
+        # call `handle_server_message`. No local registration necessary here.
+        return
     
     def handle_server_message(self, response):
         """
@@ -244,6 +256,95 @@ class DiscussionGUI:
             args=(content,),
             daemon=True
         ).start()
+
+    def attach_file(self):
+        """Open file dialog and upload selected file as an attachment."""
+        try:
+            from tkinter import filedialog
+            file_path = filedialog.askopenfilename()
+            if not file_path:
+                return
+
+            # Read file bytes
+            with open(file_path, 'rb') as f:
+                file_bytes = f.read()
+
+            filename = file_path.split('/')[-1].split('\\')[-1]
+
+            # Create a local pending message that shows an attachment placeholder
+            local_id = f"local_{self.local_message_counter}"
+            self.local_message_counter += 1
+            local_message = {
+                'msg_id': local_id,
+                'content': f"[Attachment] {filename}",
+                'class_id': self.class_id,
+                'sent_by': self.user_email,
+                'created_at': datetime.now().isoformat(),
+                'status': 'sending',
+                'is_local': True,
+                'attachment': {'filename': filename}
+            }
+
+            self.pending_messages[local_id] = local_message
+            self.display_message(local_message)
+
+            # Upload in background thread
+            threading.Thread(target=self._upload_attachment_thread, args=(file_bytes, filename, local_id), daemon=True).start()
+
+        except Exception as e:
+            print(f"[DISCUSSION GUI] Attachment error: {e}")
+            try:
+                self.status_label.config(text=f"Attachment error: {e}")
+            except:
+                pass
+
+    def _upload_attachment_thread(self, file_bytes, filename, local_id):
+        """Background thread to upload attachment and create message on server."""
+        try:
+            # Determine user id if available
+            user_id = None
+            try:
+                user_id = getattr(self.client, 'user_data', {}).get('user_id')
+            except:
+                user_id = None
+
+            if not user_id:
+                # Fallback: try token or email
+                user_id = getattr(self.client, 'user_data', {}).get('email') or self.user_email
+
+            res = self.client.upload_attachment_gridfs(self.class_id, user_id, file_bytes, filename)
+            print(f"[DISCUSSION GUI] upload_attachment_gridfs result: {res}")
+
+            # Re-enable attach button
+            if self.parent and self.parent.winfo_exists():
+                self.parent.after(0, lambda: self.attach_button.config(state=tk.NORMAL))
+
+            if not res.get('success'):
+                # Mark local pending as failed
+                if local_id in self.pending_messages:
+                    self.pending_messages[local_id]['status'] = 'failed'
+                    if self.parent and self.parent.winfo_exists():
+                        self.parent.after(0, lambda: self.update_message_display())
+                if self.parent and self.parent.winfo_exists():
+                    self.parent.after(0, lambda: self.status_label.config(text='Attachment upload failed'))
+            else:
+                # Server will broadcast the created MESSAGE and also return a SUCCESS.
+                if self.parent and self.parent.winfo_exists():
+                    self.parent.after(0, lambda: self.status_label.config(text='Attachment uploaded'))
+                # Refresh messages to pick up server-stored message
+                self.load_messages()
+
+        except Exception as e:
+            print(f"[DISCUSSION GUI] Upload thread error: {e}")
+            if local_id in self.pending_messages:
+                self.pending_messages[local_id]['status'] = 'failed'
+                if self.parent and self.parent.winfo_exists():
+                    self.parent.after(0, lambda: self.update_message_display())
+            try:
+                if self.parent and self.parent.winfo_exists():
+                    self.parent.after(0, lambda: self.status_label.config(text=f'Error: {e}'))
+            except:
+                pass
     
     def _send_message_thread(self, content):
         """Background thread to send message to server"""
@@ -261,12 +362,14 @@ class DiscussionGUI:
             
             if success:
                 print(f"[DEBUG GUI] Message sent successfully")
-                self.status_label.config(text="Message sent successfully")
+                if self.parent and self.parent.winfo_exists():
+                    self.parent.after(0, lambda: self.status_label.config(text="Message sent successfully"))
                 # Refresh to get server-stored version
                 self.load_messages()
             else:
                 print(f"[DEBUG GUI] Failed to send message")
-                self.status_label.config(text="Failed to send message")
+                if self.parent and self.parent.winfo_exists():
+                    self.parent.after(0, lambda: self.status_label.config(text="Failed to send message"))
                 
         except Exception as e:
             print(f"[DEBUG GUI] Error: {str(e)}")
@@ -278,7 +381,8 @@ class DiscussionGUI:
         """Load messages from server in background thread"""
         def load_thread():
             print(f"[DEBUG GUI] Loading messages for class: {self.class_id}")
-            self.status_label.config(text="Loading messages...")
+            if self.parent and self.parent.winfo_exists():
+                self.parent.after(0, lambda: self.status_label.config(text="Loading messages..."))
             try:
                 # This sends FETCH_MESSAGES request
                 success = self.client.fetch_messages(self.class_id, 50)

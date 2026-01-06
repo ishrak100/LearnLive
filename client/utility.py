@@ -598,3 +598,34 @@ class LearnLiveClient:
             "class_id": class_id,
             "limit": limit
         })
+
+    def upload_attachment_gridfs(self, class_id, user_id, file_content, filename=None):
+        """Upload an attachment to GridFS and create a discussion message referencing it.
+
+        This uses the same binary protocol as material/assignment uploads: send metadata
+        first, then send raw binary bytes on the same socket.
+        """
+        if filename is None:
+            filename = "attachment.bin"
+
+        print(f"[CLIENT ATTACHMENT] Uploading attachment for class {class_id}, size: {len(file_content)} bytes")
+
+        data_payload = {
+            "class_id": class_id,
+            "user_id": user_id,
+            "filename": filename,
+            "file_size": len(file_content),
+        }
+
+        send_success = self.send_message("UPLOAD_ATTACHMENT_GRIDFS", data_payload)
+        if not send_success:
+            print("[CLIENT ATTACHMENT ERROR] Failed to send metadata")
+            return {'success': False, 'error': 'Failed to send metadata'}
+
+        try:
+            self.socket.sendall(file_content)
+            print("[CLIENT ATTACHMENT] Binary data sent successfully")
+            return {'success': True}
+        except Exception as e:
+            print(f"[CLIENT ATTACHMENT ERROR] Failed to send binary data: {e}")
+            return {'success': False, 'error': f'Failed to send binary data: {str(e)}'}

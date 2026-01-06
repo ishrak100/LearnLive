@@ -1182,13 +1182,19 @@ class StudentDashboard:
             # Check if this message is for the current class
             if (hasattr(self, 'selected_class') and self.selected_class and 
                 message_data.get('class_id') == self.selected_class.get('_id')):
-                
+
                 print(f"[DEBUG STUDENT] Message is for current class, updating discussion GUI")
-                
-                # Update discussion GUI if it exists
+
+                # Update discussion GUI on main thread if it exists
                 if hasattr(self, 'discussion_gui') and self.discussion_gui:
-                    # Add the new message to the discussion display
-                    self.discussion_gui.add_new_message(message_data)
+                    try:
+                        if hasattr(self, 'window') and self.window:
+                            self.window.after(0, lambda md=message_data: self.discussion_gui.add_new_message(md))
+                        else:
+                            # Fallback: call directly (best-effort)
+                            self.discussion_gui.add_new_message(message_data)
+                    except Exception as e:
+                        print(f"[DEBUG STUDENT] Error scheduling discussion update: {e}")
                 else:
                     print(f"[DEBUG STUDENT] No discussion_gui found to update")
             
@@ -1211,16 +1217,42 @@ class StudentDashboard:
                 if (hasattr(self, 'selected_class') and self.selected_class and 
                     message['messages'] and 
                     message['messages'][0].get('class_id') == self.selected_class.get('_id')):
-                    
+
                     print(f"[DEBUG STUDENT] Messages are for current class, updating discussion GUI")
-                    
-                    # Update discussion GUI if it exists
+
+                    # Update discussion GUI on main thread if it exists
                     if hasattr(self, 'discussion_gui') and self.discussion_gui:
-                        self.discussion_gui.handle_server_message(message)
+                        try:
+                            if hasattr(self, 'window') and self.window:
+                                self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+                            else:
+                                self.discussion_gui.handle_server_message(message)
+                        except Exception as e:
+                            print(f"[DEBUG STUDENT] Error scheduling discussion messages: {e}")
                     else:
                         print(f"[DEBUG STUDENT] No discussion_gui found to update")
                 
                 return  # Don't process further
+            elif 'message' in message:
+                # Handle single-message SUCCESS response (e.g., after POST_MESSAGE)
+                print(f"[DEBUG STUDENT] Received single message response: {message.get('message', {})}")
+                message_data = message.get('message', {})
+
+                # Forward to discussion GUI if it's for the current class
+                if (hasattr(self, 'selected_class') and self.selected_class and
+                    message_data and message_data.get('class_id') == self.selected_class.get('_id')):
+                    if hasattr(self, 'discussion_gui') and self.discussion_gui:
+                        try:
+                            if hasattr(self, 'window') and self.window:
+                                self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+                            else:
+                                self.discussion_gui.handle_server_message(message)
+                        except Exception as e:
+                            print(f"[DEBUG STUDENT] Error scheduling single message forward: {e}")
+                    else:
+                        print(f"[DEBUG STUDENT] No discussion_gui found to forward single message")
+
+                return
             
             
             elif "submission_id" in message:

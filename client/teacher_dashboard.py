@@ -1759,33 +1759,24 @@ class TeacherDashboard:
             return
     
         if msg_type == 'MESSAGE':
+            # Forward real-time MESSAGE to DiscussionGUI (main-thread) if present
             msg = message.get('message', {})
             class_id = msg.get('class_id')
-            sender = msg.get('sent_by') or 'Unknown'
-            content = msg.get('content') or ''
-            attachment = msg.get('attachment')
-            created = msg.get('created_at') or ''
 
-            display = content
-            if attachment:
-                name = attachment.get('name') if isinstance(attachment, dict) else str(attachment)
-                if display:
-                    display = f"{display}\n📎 Attachment: {name}"
-                else:
-                    display = f"📎 Attachment: {name}"
-            if created:
-                display = f"{display}\n\n[{created}]"
-
+            # If discussion GUI exists and this message is for the currently selected class,
+            # schedule add_new_message on the Tk main thread so we don't touch tkinter from recv thread.
             try:
-                if getattr(self, 'current_view', None) == 'class' and getattr(self, 'selected_class', None):
-                    sel_id = self.selected_class.get('_id') or self.selected_class.get('id')
-                    if sel_id and class_id and str(sel_id) == str(class_id):
-                        dv = getattr(self, 'current_discussion_view', None)
-                        if dv:
-                            dv._add_message(display, sender)
-                            return
-            except Exception:
-                pass
+                if (hasattr(self, 'selected_class') and self.selected_class and
+                    class_id and str(self.selected_class.get('_id')) == str(class_id)):
+                    if hasattr(self, 'discussion_gui') and self.discussion_gui:
+                        if hasattr(self, 'window') and self.window:
+                            self.window.after(0, lambda m=msg: self.discussion_gui.add_new_message(m))
+                        else:
+                            # Best-effort direct call
+                            self.discussion_gui.add_new_message(msg)
+                        return
+            except Exception as e:
+                print(f"[DEBUG TEACHER] Error forwarding MESSAGE to discussion GUI: {e}")
     
         if msg_type == "SUCCESS":
             if "classes" in message:
@@ -1876,6 +1867,32 @@ class TeacherDashboard:
                         print(f"[DEBUG] Error displaying assignments: {e}")
                 else:
                     print(f"[DEBUG] assignments_container not available yet")
+            elif 'messages' in message:
+                # FETCH_MESSAGES response for discussion - forward to DiscussionGUI
+                try:
+                    msgs = message.get('messages', [])
+                    if hasattr(self, 'discussion_gui') and self.discussion_gui:
+                        if hasattr(self, 'window') and self.window:
+                            self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+                        else:
+                            self.discussion_gui.handle_server_message(message)
+                    else:
+                        print("[DEBUG TEACHER] No discussion_gui to handle fetched messages")
+                except Exception as e:
+                    print(f"[DEBUG TEACHER] Error scheduling fetched messages: {e}")
+
+            elif 'message' in message:
+                # Single-message SUCCESS response (e.g., POST_MESSAGE) - forward to DiscussionGUI
+                try:
+                    if hasattr(self, 'discussion_gui') and self.discussion_gui:
+                        if hasattr(self, 'window') and self.window:
+                            self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+                        else:
+                            self.discussion_gui.handle_server_message(message)
+                    else:
+                        print("[DEBUG TEACHER] No discussion_gui to handle single-message response")
+                except Exception as e:
+                    print(f"[DEBUG TEACHER] Error scheduling single message response: {e}")
             elif "materials" in message:
                 # Handle VIEW_MATERIALS response
                 self.materials = message.get("materials", [])

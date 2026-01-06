@@ -228,6 +228,7 @@ class LearnLiveServer:
             MSG_VIEW_STUDENTS, MSG_UPLOAD_MATERIAL, MSG_VIEW_MATERIALS,
             MSG_GET_TEACHER_SUBMISSIONS, MSG_GET_STUDENT_ALL_ASSIGNMENTS, MSG_START_FILE_TRANSFER, 
             MSG_FILE_CHUNK, MSG_END_FILE_TRANSFER, MSG_POST_MESSAGE, MSG_GET_MESSAGES, MSG_SUBMIT_ASSIGNMENT_GRIDFS
+            , MSG_UPLOAD_ATTACHMENT_GRIDFS
         ]
         
         # Verify token if required
@@ -323,6 +324,9 @@ class LearnLiveServer:
         elif msg_type == MSG_UPLOAD_MATERIAL_GRIDFS:  # NEW: Add this line
          return self.handle_upload_material_gridfs(data, client_socket, address)
         
+        elif msg_type == MSG_UPLOAD_ATTACHMENT_GRIDFS:
+            return self.handle_upload_attachment_gridfs(data, client_socket, address)
+
 
         elif msg_type == MSG_POST_MESSAGE:
             try:
@@ -1095,6 +1099,75 @@ class LearnLiveServer:
                 'success': False,
                 'error': f'Material upload failed: {str(e)}'
             }
+
+    def handle_upload_attachment_gridfs(self, data, client_socket, address):
+        """Handle GridFS-based attachment upload for discussion messages.
+
+        Expected metadata in `data`:
+        - class_id
+        - user_id
+        - filename
+        - file_size
+        - (optional) content to include as message text may be empty
+        """
+        # Authentication already verified by caller
+        class_id = data.get('class_id')
+        user_id = data.get('user_id')
+        filename = data.get('filename', '')
+        expected_file_size = int(data.get('file_size', 0) or 0)
+
+        try:
+            # Read binary from socket
+            file_content = b""
+            bytes_received = 0
+            while bytes_received < expected_file_size:
+                chunk = client_socket.recv(min(65536, expected_file_size - bytes_received))
+                if not chunk:
+                    break
+                file_content += chunk
+                bytes_received += len(chunk)
+
+            # Store in GridFS
+            fs = self.db.gridfs
+            file_id = fs.put(file_content, filename=filename, content_type='application/octet-stream')
+
+            # Build attachment dict to include in message
+            attachment = {
+                'file_id': str(file_id),
+                'filename': filename,
+            }
+
+            # Create discussion message referencing the uploaded file
+            post_data = {
+                'content': data.get('content', ''),
+                'attachment': attachment,
+                'class_id': class_id,
+                'sent_by': data.get('user_email') or data.get('user_id')
+            }
+
+            # Use DiscussionHandler to persist and broadcast
+            try:
+                result = self.discussion.send_message_handler(post_data)
+            except Exception as e:
+                result = {'type': RESP_ERROR, 'success': False, 'error': str(e)}
+
+            # Return success along with file_id and message result
+            if result.get('type') == RESP_SUCCESS:
+                return {
+                    'type': RESP_SUCCESS,
+                    'success': True,
+                    'file_id': str(file_id),
+                    'message': result.get('message')
+                }
+            else:
+                return {
+                    'type': RESP_ERROR,
+                    'success': False,
+                    'error': result.get('error', 'Failed to create message')
+                }
+
+        except Exception as e:
+            return {'type': RESP_ERROR, 'success': False, 'error': f'Attachment upload failed: {str(e)}'}
 
     
     def stop(self):
