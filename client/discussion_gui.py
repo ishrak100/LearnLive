@@ -1,311 +1,446 @@
-import ttkbootstrap as ttk
-from ttkbootstrap.constants import *
-from tkinter import messagebox, filedialog
-import os
-import sys
 import tkinter as tk
+from tkinter import ttk, messagebox
+import threading
+from datetime import datetime
 
-# Add parent directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from client.utility import LearnLiveClient
-
-
-class DiscussionView:
-    """Discussion page with chatbox-like interface for messaging"""
-
-    def __init__(self, dashboard):
-        self.dashboard = dashboard
-        self.messages = []  
-        self.attached_file = None  
-
-    def show(self):
-        """Show the discussion view as full page"""
-
-        # Hide main content frame
-        self.dashboard.content_frame.pack_forget()
-        self.dashboard.content_frame.update_idletasks()
-
-        # Correct parent
-        parent = self.dashboard.content_frame.master
-
-        self._create_discussion_ui(parent)
-
-    def create_tab_content(self, parent):
-        """Create discussion UI inside a tab"""
-        self._create_discussion_ui(parent)
-
-    def _create_discussion_ui(self, parent):
-        """Create the discussion UI elements"""
-        # Discussion container
-        self.discussion_frame = tk.Frame(parent, bg="#222222")
-        self.discussion_frame.pack(fill=BOTH, expand=YES)
-
-        # Back button area (only for full page)
-        if hasattr(self.dashboard, 'content_frame') and parent == self.dashboard.content_frame.master:
-            back_frame = tk.Frame(self.discussion_frame, bg="#222222")
-            back_frame.pack(fill=X, padx=20, pady=10)
-
-            ttk.Button(
-                back_frame,
-                text="← Back",
-                command=self._back_to_main,
-                bootstyle="secondary"
-            ).pack(side=LEFT)
-
-            # Title
-            title_label = ttk.Label(
-                back_frame,
-                text="Discussion",
-                font=("Helvetica", 16, "bold"),
-                bootstyle="inverse-dark"
-            )
-            title_label.pack(side=LEFT, padx=(20, 0))
-
-        # Main discussion area
-        main_frame = ttk.Frame(self.discussion_frame, bootstyle="dark")
-        main_frame.pack(fill=BOTH, expand=YES, padx=20, pady=10)
-
-        # Chat display area (scrollable)
-        chat_frame = ttk.Frame(main_frame, bootstyle="dark")
-        chat_frame.pack(fill=BOTH, expand=YES)
-
-        # Canvas and scrollbar for chat
-        self.chat_canvas = tk.Canvas(chat_frame, bg="#222222", highlightthickness=0)
-        scrollbar = ttk.Scrollbar(chat_frame, orient="vertical", command=self.chat_canvas.yview)
-        self.chat_canvas.configure(yscrollcommand=scrollbar.set)
-
-        self.chat_canvas.pack(side=LEFT, fill=BOTH, expand=YES)
-        scrollbar.pack(side=RIGHT, fill=Y)
-
-        # Frame inside canvas for messages
-        self.messages_frame = tk.Frame(self.chat_canvas, bg="#222222")
-        self.chat_canvas.create_window((0, 0), window=self.messages_frame, anchor="nw")
-
-        # Bind canvas resize
-        self.messages_frame.bind("<Configure>", lambda e: self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all")))
-
-        # Input area at bottom
-        input_frame = ttk.Frame(main_frame, bootstyle="dark")
-        input_frame.pack(fill=X, pady=(10, 0))
-
-        # Attachment button
-        self.attach_button = ttk.Button(
-            input_frame,
-            text="📎",
-            command=self._attach_file,
-            bootstyle="secondary",
-            width=3
+class DiscussionGUI:
+    def __init__(self, parent, client, class_id, class_name, user_email, message_callback):
+        """
+        Initialize Discussion GUI
+    
+        Args:
+            parent: Parent widget
+            client: LearnLiveClient instance
+            class_id: Class ID for discussion
+            class_name: Class name for display
+            user_email: Current user's email
+            message_callback: Callback function to handle server responses
+        """
+        self.parent = parent
+        self.client = client
+        self.class_id = class_id
+        self.class_name = class_name
+        self.user_email = user_email
+        self.message_callback = message_callback
+    
+        # Store pending messages locally
+        self.pending_messages = {}  # local_id -> message_data
+        self.local_message_counter = 0
+        self.messages_cache = []  # Cache for server messages
+    
+        # GUI setup
+        self._setup_ui()
+    
+        # Load initial messages once
+        self.load_messages()
+    
+        # Register this GUI to receive server messages
+        self._register_message_handlers()
+    
+    def _setup_ui(self):
+        """Setup the discussion UI"""
+        # Main container
+        self.main_frame = ttk.Frame(self.parent, bootstyle="dark")
+        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Header
+        header_frame = ttk.Frame(self.main_frame)
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        ttk.Label(
+            header_frame,
+            text=f"💬 Discussion - {self.class_name}",
+            font=("Arial", 14, "bold"),
+            bootstyle="inverse-light"
+        ).pack(side=tk.LEFT)
+        
+        # Refresh button
+        ttk.Button(
+            header_frame,
+            text="🔄 Refresh",
+            bootstyle="info-outline",
+            command=self.load_messages,
+            width=10
+        ).pack(side=tk.RIGHT)
+        
+        # Messages display area with scrollbar
+        messages_container = ttk.Frame(self.main_frame)
+        messages_container.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        # Create a Canvas with scrollbar for better performance
+        self.canvas = tk.Canvas(
+            messages_container,
+            bg="#2b2b2b",
+            highlightthickness=0
         )
-        self.attach_button.pack(side=LEFT, padx=(0, 5))
-
-        # Attachment label (shows selected file)
-        self.attachment_label = ttk.Label(
-            input_frame,
-            text="",
-            bootstyle="info",
-            font=("Helvetica", 8)
+        
+        scrollbar = ttk.Scrollbar(
+            messages_container, 
+            orient=tk.VERTICAL, 
+            command=self.canvas.yview
         )
-        self.attachment_label.pack(side=LEFT, padx=(0, 5))
-
-        # Text input
-        self.text_input = tk.Text(
-            input_frame,
+        
+        self.messages_frame = ttk.Frame(self.canvas)
+        self.messages_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+        
+        self.canvas.create_window((0, 0), window=self.messages_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        
+        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Bind mouse wheel for scrolling
+        def _on_mousewheel(event):
+            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        # Message input area
+        input_frame = ttk.Frame(self.main_frame)
+        input_frame.pack(fill=tk.X)
+        
+        # Message input with scrollbar
+        input_container = ttk.Frame(input_frame)
+        input_container.pack(fill=tk.BOTH, expand=True, padx=(0, 10))
+        
+        self.message_input = tk.Text(
+            input_container,
             height=3,
-            bg="#3a3a3a",
-            fg="white",
-            insertbackground="white",
-            font=("Helvetica", 10)
+            wrap=tk.WORD,
+            font=("Arial", 11)
         )
-        self.text_input.pack(side=LEFT, fill=X, expand=YES, padx=(0, 5))
-
+        
+        input_scrollbar = ttk.Scrollbar(
+            input_container, 
+            command=self.message_input.yview
+        )
+        self.message_input.configure(yscrollcommand=input_scrollbar.set)
+        
+        self.message_input.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        input_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
         # Send button
         self.send_button = ttk.Button(
             input_frame,
-            text="📤",
-            command=self._send_message,
-            bootstyle="primary",
-            width=3
+            text="Send",
+            bootstyle="success",
+            command=self.send_message,
+            width=10
         )
-        self.send_button.pack(side=LEFT)
-
-        # Load messages from DB and render
-        self._load_messages()
-
-    def _back_to_main(self):
-        """Go back to main dashboard"""
-        self.discussion_frame.pack_forget()
-        self.dashboard.show_main_content()
-
-    def _clear_messages(self):
-        """Remove all message widgets from the messages frame."""
-        for w in list(self.messages_frame.winfo_children()):
-            w.destroy()
-
-    def _load_messages(self):
-        """Fetch messages for the current class and render them.
-
-        This calls the server-side handler directly (DiscussionHandler) which
-        accesses MongoDB. If no class is selected, nothing is fetched.
+        self.send_button.pack(side=tk.RIGHT)
+        
+        # Bind Enter key (Ctrl+Enter or Cmd+Enter to send)
+        self.message_input.bind("<Control-Return>", lambda e: self.send_message())
+        self.message_input.bind("<Command-Return>", lambda e: self.send_message())
+        self.message_input.bind("<Shift-Return>", lambda e: None)  # Allow Shift+Enter for new line
+        
+        # Status label
+        self.status_label = ttk.Label(
+            self.main_frame,
+            text="Ready",
+            font=("Arial", 9),
+            bootstyle="light"
+        )
+        self.status_label.pack(anchor=tk.W, pady=(5, 0))
+    
+    def _register_message_handlers(self):
+        """Register handlers for server message responses"""
+        pass
+    
+    def handle_server_message(self, response):
         """
-        # Determine class_id
-        class_id = None
-        try:
-            class_data = getattr(self.dashboard, 'selected_class', None)
-            if class_data and isinstance(class_data, dict):
-                class_id = class_data.get('_id') or class_data.get('id')
-        except Exception:
-            class_id = None
-
-        # Clear existing messages (placeholder or stale)
-        self._clear_messages()
-
-        if not class_id:
-            # No class selected — show a friendly placeholder
-            self._add_message("Open a class to view discussion messages.", "System")
-            return
-
-        try:
-            # Import here to avoid client/server import at module load time
-            from server.discussion_handler import DiscussionHandler
-            handler = DiscussionHandler()
-            resp = handler.fetch_messages_handler({'class_id': class_id, 'limit': 200})
-            if resp.get('type') != 'SUCCESS':
-                self._add_message(f"Failed to load messages: {resp.get('error')}", "System")
-                return
-
-            messages = resp.get('messages', []) or []
-            # fetch_messages returns most-recent-first; show oldest-first
-            messages = list(reversed(messages))
-
-            if not messages:
-                self._add_message("No messages yet. Start the conversation!", "System")
-                return
-
-            for m in messages:
-                sender = m.get('sent_by') or 'Unknown'
-                content = m.get('content') or ''
-                attachment = m.get('attachment')
-                created = m.get('created_at') or ''
-
-                display = content
-                if attachment:
-                    # if attachment is stored as dict with name/path
-                    name = attachment.get('name') if isinstance(attachment, dict) else str(attachment)
-                    if display:
-                        display = f"{display}\n📎 Attachment: {name}"
-                    else:
-                        display = f"📎 Attachment: {name}"
-
-                # include timestamp if available
-                if created:
-                    display = f"{display}\n\n[{created}]"
-
-                self._add_message(display, sender)
-
-        except Exception as e:
-            self._add_message(f"Error loading messages: {e}", "System")
-
-    def _send_message(self):
-        """Send a message with optional attachment"""
-        message = self.text_input.get("1.0", tk.END).strip()
+        Handle messages received from server
         
-        if not message and not self.attached_file:
-            messagebox.showwarning("Warning", "Please enter a message or attach a file.")
+        This should be called from the main application's message callback
+        """
+        msg_type = response.get('type', '')
+        print(f"[DEBUG GUI] handle_server_message: type={msg_type}")
+        
+        if msg_type == 'SUCCESS':
+            if 'messages' in response:
+                # This is a response to fetch_messages
+                print(f"[DEBUG GUI] Got messages response: {len(response['messages'])} messages")
+                self.messages_cache = response['messages']
+                self.display_messages(response['messages'])
+                self.status_label.config(text=f"Loaded {len(response['messages'])} messages")
+                
+            elif 'message' in response:
+                # This is a response to post_message
+                server_msg = response['message']
+                print(f"[DEBUG GUI] Message sent to server: {server_msg}")
+                
+                # Update any pending local message with server data
+                for local_id, local_msg in list(self.pending_messages.items()):
+                    if (local_msg['content'] == server_msg.get('content') and 
+                        local_msg['sent_by'] == server_msg.get('sent_by')):
+                        # Remove from pending
+                        del self.pending_messages[local_id]
+                        # Refresh to get server version
+                        self.load_messages()
+                        break
+                
+                self.status_label.config(text="Message sent successfully")
+    
+        elif msg_type == 'MESSAGE':
+            # Real-time broadcast message
+            print(f"[DEBUG GUI] Real-time message received!")
+            message_data = response.get('message', {})
+            self.add_new_message(message_data)
+            
+        elif msg_type == 'ERROR':
+            error_msg = response.get('error', 'Unknown error')
+            self.status_label.config(text=f"Error: {error_msg}")
+            print(f"[DEBUG GUI] Error: {error_msg}")
+            
+            # If it's a message sending error, mark pending message as failed
+            if 'message' in response.get('data', {}):
+                for local_id, local_msg in self.pending_messages.items():
+                    if local_msg.get('status') == 'sending':
+                        local_msg['status'] = 'failed'
+                        self.update_message_display()
+                        break
+    
+    def send_message(self):
+        """Send message without blocking UI"""
+        content = self.message_input.get("1.0", tk.END).strip()
+        if not content:
             return
         
-        # Build message with attachment info if present
-        attachment_payload = None
-        if self.attached_file:
-            file_name = self.attached_file['name']
-            file_path = self.attached_file['path']
-            attachment_payload = {'name': file_name, 'path': file_path}
-            if message:
-                display_text = f"{message}\n📎 Attachment: {file_name}"
-            else:
-                display_text = f"📎 Attachment: {file_name}"
-        else:
-            display_text = message
-
-        # Show locally immediately
-        self._add_message(display_text, "You")
-
-        # Prepare data for DB handler
-        class_id = None
-        try:
-            class_data = getattr(self.dashboard, 'selected_class', None)
-            if class_data and isinstance(class_data, dict):
-                class_id = class_data.get('_id') or class_data.get('id')
-        except Exception:
-            class_id = None
-
-        sent_by = None
-        try:
-            sent_by = getattr(self.dashboard, 'user_data', {}).get('email') or getattr(self.dashboard, 'user_data', {}).get('_id')
-        except Exception:
-            sent_by = None
-
-        payload = {
-            'content': message if message else None,
-            'attachment': attachment_payload,
-            'class_id': class_id,
-            'sent_by': sent_by,
-            'reply': None
+        print(f"[DEBUG GUI] Sending message: '{content}'")
+        
+        # Clear input immediately
+        self.message_input.delete("1.0", tk.END)
+        
+        # Disable send button temporarily
+        self.send_button.config(state=tk.DISABLED)
+        self.status_label.config(text="Sending message...")
+        
+        # Create local message for instant display
+        local_id = f"local_{self.local_message_counter}"
+        self.local_message_counter += 1
+        
+        local_message = {
+            'msg_id': local_id,
+            'content': content,
+            'class_id': self.class_id,
+            'sent_by': self.user_email,
+            'created_at': datetime.now().isoformat(),
+            'status': 'sending',
+            'is_local': True
         }
-
-        # Send to server via TCP so server will persist + broadcast
+        
+        # Store locally
+        self.pending_messages[local_id] = local_message
+        
+        # Display message locally immediately
+        self.display_message(local_message)
+        
+        # Send in background thread
+        threading.Thread(
+            target=self._send_message_thread,
+            args=(content,),
+            daemon=True
+        ).start()
+    
+    def _send_message_thread(self, content):
+        """Background thread to send message to server"""
         try:
-            client = getattr(self.dashboard, 'client', None)
-            if client and client.connected:
-                ok = client.send_message('POST_MESSAGE', payload)
-                if not ok:
-                    messagebox.showwarning('Warning', 'Failed to send message to server (socket error).')
+            print(f"[DEBUG GUI] Thread started for sending message")
+            
+            # Send via client
+            success = self.client.post_message(content, self.class_id)
+            
+            print(f"[DEBUG GUI] Client.post_message returned: {success}")
+            
+            # Re-enable send button regardless of success/failure
+            if self.parent and self.parent.winfo_exists():
+                self.parent.after(0, lambda: self.send_button.config(state=tk.NORMAL))
+            
+            if success:
+                print(f"[DEBUG GUI] Message sent successfully")
+                self.status_label.config(text="Message sent successfully")
+                # Refresh to get server-stored version
+                self.load_messages()
             else:
-                # Not connected — warn user but message remains local
-                messagebox.showwarning('Warning', 'Not connected to server; message shown locally only.')
+                print(f"[DEBUG GUI] Failed to send message")
+                self.status_label.config(text="Failed to send message")
+                
         except Exception as e:
-            messagebox.showwarning('Warning', f'Error sending message to server: {e}')
-
-        # Clear attachment and input
-        self.attached_file = None
-        self.attachment_label.config(text="")
-        self.text_input.delete("1.0", tk.END)
-
-    def _attach_file(self):
-        """Attach a file to send with the message"""
-        file_path = filedialog.askopenfilename(
-            title="Select a file to attach",
-            filetypes=[("All files", "*.*")]
-        )
-        if file_path:
-            file_name = os.path.basename(file_path)
-            self.attached_file = {'name': file_name, 'path': file_path}
-            self.attachment_label.config(text=f"📎 {file_name}")
-            messagebox.showinfo("File Selected", f"File '{file_name}' selected.\nType a caption and click send.")
-
-    def _add_message(self, text, sender):
-        """Add a message to the chat"""
-        msg_frame = tk.Frame(self.messages_frame, bg="#222222")
-        msg_frame.pack(fill=X, pady=2)
-
-        sender_label = ttk.Label(
+            print(f"[DEBUG GUI] Error: {str(e)}")
+            if self.parent and self.parent.winfo_exists():
+                self.parent.after(0, lambda: self.send_button.config(state=tk.NORMAL))
+            self.status_label.config(text=f"Error: {str(e)}")
+    
+    def load_messages(self):
+        """Load messages from server in background thread"""
+        def load_thread():
+            print(f"[DEBUG GUI] Loading messages for class: {self.class_id}")
+            self.status_label.config(text="Loading messages...")
+            try:
+                # This sends FETCH_MESSAGES request
+                success = self.client.fetch_messages(self.class_id, 50)
+                print(f"[DEBUG GUI] fetch_messages called, result: {success}")
+            except Exception as e:
+                print(f"[DEBUG GUI] Error loading messages: {str(e)}")
+                if self.parent and self.parent.winfo_exists():
+                    self.parent.after(0, lambda: self.status_label.config(text=f"Error: {str(e)}"))
+        
+        # Run in thread to avoid blocking
+        thread = threading.Thread(target=load_thread, daemon=True)
+        thread.start()
+    
+    def add_new_message(self, message_data):
+        """Add a new message to the display (for real-time updates)"""
+        print(f"[DEBUG GUI] Adding new message: {message_data}")
+        
+        # Check if message is already in cache
+        msg_id = message_data.get('msg_id') or message_data.get('_id')
+        for msg in self.messages_cache:
+            if (msg.get('msg_id') == msg_id or msg.get('_id') == msg_id):
+                print(f"[DEBUG GUI] Message already in cache, skipping")
+                return
+        
+        # Add message to cache
+        self.messages_cache.append(message_data)
+        
+        # If the message is not from current user, display it immediately
+        if message_data.get('sent_by') != self.user_email:
+            print(f"[DEBUG GUI] Displaying message from others immediately")
+            self.display_message(message_data)
+            if self.canvas and self.canvas.winfo_exists():
+                self.canvas.yview_moveto(1.0)  # Scroll to bottom
+        
+        # Also refresh the full list to ensure consistency
+        self.load_messages()
+    
+    def display_message(self, message):
+        """Display a single message in the messages frame"""
+        # Create message frame
+        msg_frame = ttk.Frame(self.messages_frame)
+        msg_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        # Configure colors based on sender
+        is_me = message.get('sent_by') == self.user_email
+        bg_color = "#1e3a1e" if is_me else "#1e1e3a"  # Green for me, blue for others
+        fg_color = "#4CAF50" if is_me else "#2196F3"
+        
+        # Message container
+        container = tk.Frame(
             msg_frame,
-            text=f"{sender}:",
-            font=("Helvetica", 9, "bold"),
-            bootstyle="inverse-dark"
+            bg=bg_color,
+            relief=tk.RAISED,
+            bd=1
         )
-        sender_label.pack(anchor="w")
-
-        text_label = ttk.Label(
-            msg_frame,
-            text=text,
+        container.pack(
+            fill=tk.X, 
+            side=tk.RIGHT if is_me else tk.LEFT,
+            expand=True
+        )
+        
+        # Sender label
+        sender_text = "You" if is_me else message.get('sent_by', 'Unknown')
+        sender_label = tk.Label(
+            container,
+            text=f"{sender_text}:",
+            bg=bg_color,
+            fg=fg_color,
+            font=("Arial", 11, "bold"),
+            anchor="w"
+        )
+        sender_label.pack(fill=tk.X, padx=10, pady=(10, 0))
+        
+        # Content label
+        content_label = tk.Label(
+            container,
+            text=message.get('content', ''),
+            bg=bg_color,
+            fg="white",
+            font=("Arial", 11),
             wraplength=400,
-            justify="left",
-            bootstyle="inverse-dark"
+            justify=tk.LEFT,
+            anchor="w"
         )
-        text_label.pack(anchor="w", padx=(10, 0))
-
-        # Update scroll region
-        self.messages_frame.update_idletasks()
-        self.chat_canvas.configure(scrollregion=self.chat_canvas.bbox("all"))
-        self.chat_canvas.yview_moveto(1.0)  # Scroll to bottom
+        content_label.pack(fill=tk.X, padx=10, pady=(0, 5))
+        
+        # Timestamp and status
+        timestamp = message.get('created_at', '')
+        if timestamp:
+            try:
+                if 'T' in timestamp:
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    timestamp_str = dt.strftime("%I:%M %p")
+                else:
+                    timestamp_str = timestamp
+            except:
+                timestamp_str = timestamp
+        else:
+            timestamp_str = ""
+        
+        status = message.get('status', '')
+        if status == 'sending':
+            status_text = "⏳ Sending..."
+            status_color = "#FF9800"
+        elif status == 'failed':
+            status_text = "❌ Failed"
+            status_color = "#F44336"
+        else:
+            status_text = timestamp_str
+            status_color = "#888888"
+        
+        status_frame = tk.Frame(container, bg=bg_color)
+        status_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        
+        status_label = tk.Label(
+            status_frame,
+            text=status_text,
+            bg=bg_color,
+            fg=status_color,
+            font=("Arial", 9)
+        )
+        status_label.pack(side=tk.RIGHT)
+    
+    def display_messages(self, messages):
+        """Display all messages (clear and redraw)"""
+        # Clear existing messages
+        for widget in self.messages_frame.winfo_children():
+            widget.destroy()
+        
+        # Combine server messages with pending local messages
+        all_messages = []
+        
+        # Add server messages
+        for msg in messages:
+            msg['is_local'] = False
+            all_messages.append(msg)
+        
+        # Add pending local messages
+        for local_msg in self.pending_messages.values():
+            # Only add if not already in server messages
+            if local_msg['status'] != 'sent':
+                all_messages.append(local_msg)
+        
+        # Sort by timestamp
+        all_messages.sort(key=lambda x: x.get('created_at', ''))
+        
+        # Display all messages
+        for msg in all_messages:
+            self.display_message(msg)
+        
+        # Scroll to bottom
+        if self.canvas and self.canvas.winfo_exists():
+            self.canvas.yview_moveto(1.0)
+    
+    def update_message_display(self):
+        """Update the display with current messages"""
+        self.load_messages()
+    
+    def cleanup(self):
+        """Cleanup resources"""
+        try:
+            if self.main_frame and self.main_frame.winfo_exists():
+                self.main_frame.destroy()
+        except:
+            pass

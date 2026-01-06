@@ -11,7 +11,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from client.utility import LearnLiveClient
 from client.expand_gui import ExpandView
-from client.discussion_gui import DiscussionView
+from client.discussion_gui import DiscussionGUI
 
 
 class StudentDashboard:
@@ -460,8 +460,14 @@ class StudentDashboard:
       discussion = ttk.Frame(notebook, bootstyle="light")
       notebook.add(discussion, text="Discussion")
 
-      discussion_view = DiscussionView(self)
-      discussion_view.create_tab_content(discussion)
+      self.discussion_gui = DiscussionGUI(
+      parent=discussion,
+      client=self.client,
+      class_id=self.selected_class['_id'],
+      class_name=self.selected_class.get('class_name', 'Unknown'),
+      user_email=self.user_data.get('email', ''),
+      message_callback=self._handle_server_message  # Important for receiving messages
+    )
 
 
 
@@ -1165,6 +1171,28 @@ class StudentDashboard:
                 message['binary_data'] = b''
     
             return
+        
+        if msg_type == 'MESSAGE':
+            # This is a real-time message broadcast from discussion
+            print(f"[DEBUG STUDENT] Received real-time MESSAGE: {message.get('message', {})}")
+            
+            # Get the message data
+            message_data = message.get('message', {})
+            
+            # Check if this message is for the current class
+            if (hasattr(self, 'selected_class') and self.selected_class and 
+                message_data.get('class_id') == self.selected_class.get('_id')):
+                
+                print(f"[DEBUG STUDENT] Message is for current class, updating discussion GUI")
+                
+                # Update discussion GUI if it exists
+                if hasattr(self, 'discussion_gui') and self.discussion_gui:
+                    # Add the new message to the discussion display
+                    self.discussion_gui.add_new_message(message_data)
+                else:
+                    print(f"[DEBUG STUDENT] No discussion_gui found to update")
+            
+            return  # Don't process further
 
         
         if msg_type == "SUCCESS":
@@ -1173,6 +1201,27 @@ class StudentDashboard:
                 self._update_sidebar_classes()
                 if self.current_view == "home":
                     self._show_home_page()
+            
+
+            elif 'messages' in message:
+                # Handle FETCH_MESSAGES response
+                print(f"[DEBUG STUDENT] Received messages: {len(message['messages'])}")
+                
+                # Check if this is for the current class
+                if (hasattr(self, 'selected_class') and self.selected_class and 
+                    message['messages'] and 
+                    message['messages'][0].get('class_id') == self.selected_class.get('_id')):
+                    
+                    print(f"[DEBUG STUDENT] Messages are for current class, updating discussion GUI")
+                    
+                    # Update discussion GUI if it exists
+                    if hasattr(self, 'discussion_gui') and self.discussion_gui:
+                        self.discussion_gui.handle_server_message(message)
+                    else:
+                        print(f"[DEBUG STUDENT] No discussion_gui found to update")
+                
+                return  # Don't process further
+            
             
             elif "submission_id" in message:
                 # Handle SUBMIT_ASSIGNMENT success response
@@ -1905,7 +1954,7 @@ class StudentDashboard:
             
             # Show login screen again
             from client.login_gui import LoginWindow
-            from client.client import LearnLiveClient
+            from client.utility import LearnLiveClient
             
             # Create new client and login window
             new_client = LearnLiveClient()

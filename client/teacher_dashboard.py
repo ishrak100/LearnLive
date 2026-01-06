@@ -12,7 +12,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from client.utility import LearnLiveClient
 from client.expand_gui import ExpandView
-from client.discussion_gui import DiscussionView
+from client.discussion_gui import DiscussionGUI
 
 
 class TeacherDashboard:
@@ -610,13 +610,18 @@ class TeacherDashboard:
         self._create_people_tab(people_frame)
         notebook.add(people_frame, text="People")
         
-        # Discussion tab
-        discussion_frame = ttk.Frame(notebook, bootstyle="dark")
-        discussion_view = DiscussionView(self)
-        discussion_view.create_tab_content(discussion_frame)
-        # Keep reference so broadcast messages can be rendered
-        self.current_discussion_view = discussion_view
-        notebook.add(discussion_frame, text="Discussion")
+       
+        discussion = ttk.Frame(notebook, bootstyle="light")
+        notebook.add(discussion, text="Discussion")
+
+        self.discussion_gui = DiscussionGUI(
+        parent=discussion,
+        client=self.client,
+        class_id=self.selected_class['_id'],
+        class_name=self.selected_class.get('class_name', 'Unknown'),
+        user_email=self.user_data.get('email', ''),
+        message_callback=self._handle_server_message  # Important for receiving messages
+    )
     
     def _create_stream_tab(self, parent):
         """Create announcements tab"""

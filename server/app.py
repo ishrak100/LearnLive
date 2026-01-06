@@ -341,7 +341,7 @@ class LearnLiveServer:
                     print(f"[ERROR] Failed to recover DiscussionHandler: {e2}")
                     return {'type': RESP_ERROR, 'error': str(e2)}
 
-        elif msg_type == MSG_GET_MESSAGES:
+        elif msg_type == MSG_FETCH_MESSAGES:
             try:
                 return self.discussion.fetch_messages_handler(data)
             except AttributeError as e:

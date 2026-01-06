@@ -40,7 +40,7 @@ class DiscussionDB:
 			'reply': reply,
 		}
 		res = self.messages.insert_one(doc)
-		doc['_id'] = res.inserted_id
+		doc['_id'] = str(res.inserted_id)  # FIXED: Convert to string
 		doc['msg_id'] = str(res.inserted_id)
 		return doc
 
@@ -50,10 +50,11 @@ class DiscussionDB:
 		cursor = self.messages.find(query).sort('created_at', DESCENDING).limit(limit)
 		out = []
 		for d in cursor:
+			# FIXED: Convert _id to string for JSON serialization
+			d['_id'] = str(d.get('_id'))
 			d['msg_id'] = str(d.get('_id'))
 			# convert datetime to isoformat for safe JSON transfer
 			if isinstance(d.get('created_at'), datetime):
 				d['created_at'] = d['created_at'].isoformat()
 			out.append(d)
 		return out
-

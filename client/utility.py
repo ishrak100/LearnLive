@@ -8,6 +8,8 @@ import os
 import sys
 
 # Add parent directory to path
+MSG_POST_MESSAGE = "POST_MESSAGE"
+MSG_FETCH_MESSAGES = "FETCH_MESSAGES"
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.config import SERVER_HOST, SERVER_PORT, BUFFER_SIZE
@@ -559,3 +561,40 @@ class LearnLiveClient:
         except Exception as e:
             print(f"[CLIENT MATERIAL ERROR] Failed to send binary data: {e}")
             return {'success': False, 'error': f'Failed to send binary data: {str(e)}'}
+        
+        # Add these methods after the existing methods like upload_material_gridfs:
+
+    def post_message(self, content, class_id):
+        """Send a discussion message - NON-BLOCKING VERSION"""
+        print(f"[DEBUG CLIENT] post_message called: content={content}, class_id={class_id}")
+    
+        # Get user email from user_data
+        sent_by = ""
+        if hasattr(self, 'user_data') and self.user_data:
+            sent_by = self.user_data.get('email', '')
+        elif hasattr(self, 'email'):
+            sent_by = self.email
+        else:
+            print(f"[DEBUG CLIENT] Warning: No user email found!")
+            sent_by = "unknown"
+    
+        data = {
+            "content": content,
+            "class_id": class_id,
+            "sent_by": sent_by,  # Use email instead of user_id
+        }
+    
+        print(f"[DEBUG CLIENT] Sending POST_MESSAGE with data: {data}")
+    
+        # Use send_message (which is already non-blocking) instead of send_message_to_server
+        result = self.send_message("POST_MESSAGE", data)
+        print(f"[DEBUG CLIENT] send_message returned: {result}")
+    
+        return result
+    
+    def fetch_messages(self, class_id: str, limit: int = 100) -> bool:
+        """Fetch discussion messages for a class."""
+        return self.send_message("FETCH_MESSAGES", {
+            "class_id": class_id,
+            "limit": limit
+        })
