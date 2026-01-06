@@ -365,153 +365,327 @@ class StudentDashboard:
         
         return card
     
-    def _show_class_page(self, class_data):
-      """Show class page"""
-      self.current_view = "class"
-      self.selected_class = class_data
+    # def _show_class_page(self, class_data):
+    #   """Show class page"""
+    #   self.current_view = "class"
+    #   self.selected_class = class_data
 
   
-      for widget in self.content_frame.winfo_children():
-         widget.destroy()
+    #   for widget in self.content_frame.winfo_children():
+    #      widget.destroy()
 
-      if self.home_btn:
-        self.home_btn.configure(bootstyle="dark")
+    #   if self.home_btn:
+    #     self.home_btn.configure(bootstyle="dark")
+
+    #     import tkinter as tk
+
+    #     banner = tk.Frame(
+    #     self.content_frame,
+    #     bg="#000000",
+    #     height=150
+    #    )
+    #   banner.pack(fill=tk.X)
+    #   banner.pack_propagate(False)
+
+    #   title_frame = tk.Frame(banner, bg="#000000")
+    #   title_frame.place(relx=0.05, rely=0.5, anchor="w")
+
+    #   tk.Label(
+    #    title_frame,
+    #    text=class_data.get("class_name", "Unknown"),
+    #    font=("Arial", 28, "bold"),
+    #    fg="white",
+    #    bg="#000000"
+    #  ).pack(anchor="w")
+
+    #   tk.Label(
+    #   title_frame,
+    #   text=class_data.get("subject", ""),
+    #   font=("Arial", 14),
+    #   fg="white",
+    #   bg="#000000"
+    #  ).pack(anchor="w", pady=(5, 0))
+
+
+    #   notebook = ttk.Notebook(self.content_frame, bootstyle="dark")
+    #   notebook.pack(fill=BOTH, expand=YES, padx=20, pady=20)
+
+    #   stream = ttk.Frame(notebook, bootstyle="light")
+    #   notebook.add(stream, text="Announcements")
+
+    #   self.stream_canvas = Canvas(stream, bg="#FFFFFF", highlightthickness=0)
+    #   scrollbar = ttk.Scrollbar(stream, orient="vertical", command=self.stream_canvas.yview)
+    #   self.stream_container = ttk.Frame(self.stream_canvas, bootstyle="light")
+
+    #   self.stream_container.bind(
+    #      "<Configure>",
+    #     lambda e: self.stream_canvas.configure(
+    #          scrollregion=self.stream_canvas.bbox("all")
+    #      )
+    #   )
+
+    #   self.stream_canvas_window = self.stream_canvas.create_window(
+    #     (0, 0),
+    #     window=self.stream_container,
+    #     anchor="nw"
+    #   )
+
+    #   self.stream_canvas.configure(yscrollcommand=scrollbar.set)
+    #   self.stream_canvas.bind(
+    #     "<Configure>",
+    #     lambda e: self.stream_canvas.itemconfig(
+    #         self.stream_canvas_window, width=e.width
+    #     )
+    #   )
+
+    #   self.stream_canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=20, pady=20)
+    #   scrollbar.pack(side=RIGHT, fill=Y)
+
+    #   if self.selected_class:
+    #     self.client.view_announcements(self.selected_class["_id"])
+
+    #   assignments = ttk.Frame(notebook, bootstyle="light")
+    #   self._create_assignments_tab(assignments)
+    #   notebook.add(assignments, text="Assignments")
+
+   
+    #   materials = ttk.Frame(notebook, bootstyle="light")
+    #   self._create_materials_tab(materials)
+    #   notebook.add(materials, text="Class Materials")
+  
+    #   people = ttk.Frame(notebook, bootstyle="light")
+    #   self._create_people_tab(people, class_data)
+    #   notebook.add(people, text="People")
+
+    #   discussion = ttk.Frame(notebook, bootstyle="light")
+    #   notebook.add(discussion, text="Discussion")
+
+    #   self.discussion_gui = DiscussionGUI(
+    #   parent=discussion,
+    #   client=self.client,
+    #   class_id=self.selected_class['_id'],
+    #   class_name=self.selected_class.get('class_name', 'Unknown'),
+    #   user_email=self.user_data.get('email', ''),
+    #   message_callback=self._handle_server_message
+    #   )
+
+    #     if self.selected_class:
+    #         self.refresh_class_data(self.selected_class['_id'])
+
+    def _show_class_page(self, class_data):
+        """Show class page"""
+        self.current_view = "class"
+        self.selected_class = class_data
+
+        # CRITICAL FIX: Reset all container references when switching classes
+        self.materials_container = None
+        self.assignments_container = None
+        self.stream_container = None
+        self.announcements = []
+        self.materials = []
+        self.assignments = []
+
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+
+        if self.home_btn:
+            self.home_btn.configure(bootstyle="dark")
 
         import tkinter as tk
 
         banner = tk.Frame(
-        self.content_frame,
-        bg="#000000",
-        height=150
-       )
-      banner.pack(fill=tk.X)
-      banner.pack_propagate(False)
-
-      title_frame = tk.Frame(banner, bg="#000000")
-      title_frame.place(relx=0.05, rely=0.5, anchor="w")
-
-      tk.Label(
-       title_frame,
-       text=class_data.get("class_name", "Unknown"),
-       font=("Arial", 28, "bold"),
-       fg="white",
-       bg="#000000"
-     ).pack(anchor="w")
-
-      tk.Label(
-      title_frame,
-      text=class_data.get("subject", ""),
-      font=("Arial", 14),
-      fg="white",
-      bg="#000000"
-     ).pack(anchor="w", pady=(5, 0))
-
-
-      notebook = ttk.Notebook(self.content_frame, bootstyle="dark")
-      notebook.pack(fill=BOTH, expand=YES, padx=20, pady=20)
-
-      stream = ttk.Frame(notebook, bootstyle="light")
-      notebook.add(stream, text="Announcements")
-
-      self.stream_canvas = Canvas(stream, bg="#FFFFFF", highlightthickness=0)
-      scrollbar = ttk.Scrollbar(stream, orient="vertical", command=self.stream_canvas.yview)
-      self.stream_container = ttk.Frame(self.stream_canvas, bootstyle="light")
-
-      self.stream_container.bind(
-         "<Configure>",
-        lambda e: self.stream_canvas.configure(
-             scrollregion=self.stream_canvas.bbox("all")
-         )
-      )
-
-      self.stream_canvas_window = self.stream_canvas.create_window(
-        (0, 0),
-        window=self.stream_container,
-        anchor="nw"
-      )
-
-      self.stream_canvas.configure(yscrollcommand=scrollbar.set)
-      self.stream_canvas.bind(
-        "<Configure>",
-        lambda e: self.stream_canvas.itemconfig(
-            self.stream_canvas_window, width=e.width
+            self.content_frame,
+            bg="#000000",
+            height=150
         )
-      )
+        banner.pack(fill=tk.X)
+        banner.pack_propagate(False)
 
-      self.stream_canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=20, pady=20)
-      scrollbar.pack(side=RIGHT, fill=Y)
+        title_frame = tk.Frame(banner, bg="#000000")
+        title_frame.place(relx=0.05, rely=0.5, anchor="w")
 
-      if self.selected_class:
-        self.client.view_announcements(self.selected_class["_id"])
+        tk.Label(
+            title_frame,
+            text=class_data.get("class_name", "Unknown"),
+            font=("Arial", 28, "bold"),
+            fg="white",
+            bg="#000000"
+        ).pack(anchor="w")
 
-      assignments = ttk.Frame(notebook, bootstyle="light")
-      self._create_assignments_tab(assignments)
-      notebook.add(assignments, text="Assignments")
+        tk.Label(
+            title_frame,
+            text=class_data.get("subject", ""),
+            font=("Arial", 14),
+            fg="white",
+            bg="#000000"
+        ).pack(anchor="w", pady=(5, 0))
 
-   
-      materials = ttk.Frame(notebook, bootstyle="light")
-      self._create_materials_tab(materials)
-      notebook.add(materials, text="Class Materials")
-  
-      people = ttk.Frame(notebook, bootstyle="light")
-      self._create_people_tab(people, class_data)
-      notebook.add(people, text="People")
+        notebook = ttk.Notebook(self.content_frame, bootstyle="dark")
+        notebook.pack(fill=BOTH, expand=YES, padx=20, pady=20)
 
-      discussion = ttk.Frame(notebook, bootstyle="light")
-      notebook.add(discussion, text="Discussion")
+        # ===== ANNOUNCEMENTS TAB =====
+        stream = ttk.Frame(notebook, bootstyle="light")
+        notebook.add(stream, text="Announcements")
 
-      self.discussion_gui = DiscussionGUI(
-      parent=discussion,
-      client=self.client,
-      class_id=self.selected_class['_id'],
-      class_name=self.selected_class.get('class_name', 'Unknown'),
-      user_email=self.user_data.get('email', ''),
-      message_callback=self._handle_server_message  # Important for receiving messages
-    )
+        self.stream_canvas = Canvas(stream, bg="#FFFFFF", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(stream, orient="vertical", command=self.stream_canvas.yview)
+        self.stream_container = ttk.Frame(self.stream_canvas, bootstyle="light")
 
+        self.stream_container.bind(
+            "<Configure>",
+            lambda e: self.stream_canvas.configure(
+                scrollregion=self.stream_canvas.bbox("all")
+            )
+        )
 
+        self.stream_canvas_window = self.stream_canvas.create_window(
+            (0, 0),
+            window=self.stream_container,
+            anchor="nw"
+        )
 
+        self.stream_canvas.configure(yscrollcommand=scrollbar.set)
+        self.stream_canvas.bind(
+            "<Configure>",
+            lambda e: self.stream_canvas.itemconfig(
+                self.stream_canvas_window, width=e.width
+            )
+        )
 
-    
-    def _create_assignments_tab(self, parent):
-        """Create assignments tab"""
+        self.stream_canvas.pack(side=LEFT, fill=BOTH, expand=YES, padx=20, pady=20)
+        scrollbar.pack(side=RIGHT, fill=Y)
+
+        # ===== ASSIGNMENTS TAB =====
+        assignments = ttk.Frame(notebook, bootstyle="light")
+        notebook.add(assignments, text="Assignments")
+        
+        # Create assignments container and store reference BEFORE requesting data
+        self.assignments_container = ttk.Frame(assignments, bootstyle="light")
+        self.assignments_container.pack(fill=BOTH, expand=YES, padx=20, pady=10)
+        
+        # Add title to assignments tab
         ttk.Label(
-            parent,
+            assignments,
             text="Assignments",
             font=("Arial", 16, "bold"),
             bootstyle="inverse-light"
-        ).pack(anchor=W, padx=20, pady=20)
+        ).pack(anchor=W, padx=20, pady=20, before=self.assignments_container)
+
+        # ===== MATERIALS TAB =====
+        materials = ttk.Frame(notebook, bootstyle="light")
+        notebook.add(materials, text="Class Materials")
         
-        # Assignments container
-        assignments_container = ttk.Frame(parent, bootstyle="light")
-        assignments_container.pack(fill=BOTH, expand=YES, padx=20, pady=10)
+        # Create materials container and store reference BEFORE requesting data
+        self.materials_container = ttk.Frame(materials, bootstyle="light")
+        self.materials_container.pack(fill=BOTH, expand=YES, padx=20, pady=10)
         
-        # Store reference for updates
-        self.assignments_container = assignments_container
-        
-        # Fetch and display assignments
-        if self.selected_class:
-            self.client.view_assignments(self.selected_class['_id'])
-    
-    def _create_materials_tab(self, parent):
-        """Create materials tab"""
+        # Add title to materials tab
         ttk.Label(
-            parent,
+            materials,
             text="Class Materials",
             font=("Arial", 16, "bold"),
             bootstyle="inverse-light"
-        ).pack(anchor=W, padx=20, pady=20)
-        
-        # Materials container with scrollbar
-        materials_container = ttk.Frame(parent, bootstyle="light")
-        materials_container.pack(fill=BOTH, expand=YES, padx=20, pady=10)
-        
-        # Store reference for updates
-        self.materials_container = materials_container
-        
-        # Fetch and display materials
+        ).pack(anchor=W, padx=20, pady=20, before=self.materials_container)
+
+        # ===== PEOPLE TAB =====
+        people = ttk.Frame(notebook, bootstyle="light")
+        self._create_people_tab(people, class_data)
+        notebook.add(people, text="People")
+
+        # ===== DISCUSSION TAB =====
+        discussion = ttk.Frame(notebook, bootstyle="light")
+        notebook.add(discussion, text="Discussion")
+
+        self.discussion_gui = DiscussionGUI(
+            parent=discussion,
+            client=self.client,
+            class_id=self.selected_class['_id'],
+            class_name=self.selected_class.get('class_name', 'Unknown'),
+            user_email=self.user_data.get('email', ''),
+            message_callback=self._handle_server_message
+        )
+
+        # NOW request data after all containers are created and references are set
         if self.selected_class:
+            print(f"[DEBUG CLASSPAGE] Requesting data for class: {self.selected_class['_id']}")
+            print(f"[DEBUG CLASSPAGE] materials_container reference: {self.materials_container}")
+            print(f"[DEBUG CLASSPAGE] assignments_container reference: {self.assignments_container}")
+            
+            # Request all data
+            self.client.view_announcements(self.selected_class["_id"])
+            self.client.view_assignments(self.selected_class['_id'])
             self.client.view_materials(self.selected_class['_id'])
+
+        def refresh_class_data(self, class_id):
+            """Force refresh all data for a class"""
+            print(f"[DEBUG] Refreshing all data for class: {class_id}")
+            
+            # Clear existing data
+            self.announcements = []
+            self.assignments = []
+            self.materials = []
+            
+            # Force refresh by clearing cache
+            if class_id in self.announcements_cache:
+                del self.announcements_cache[class_id]
+            
+            # Refresh announcements
+            if hasattr(self, 'stream_container'):
+                self.client.view_announcements(class_id)
+            
+            # Refresh assignments if assignments tab exists
+            if (hasattr(self, 'assignments_container') and 
+                self.assignments_container and
+                self.assignments_container.winfo_exists()):
+                self.client.view_assignments(class_id)
+            
+            # Refresh materials if materials tab exists
+            if (hasattr(self, 'materials_container') and 
+                self.materials_container and
+                self.materials_container.winfo_exists()):
+                self.client.view_materials(class_id)
+
+
+    
+    # def _create_assignments_tab(self, parent):
+    #     """Create assignments tab"""
+    #     ttk.Label(
+    #         parent,
+    #         text="Assignments",
+    #         font=("Arial", 16, "bold"),
+    #         bootstyle="inverse-light"
+    #     ).pack(anchor=W, padx=20, pady=20)
+        
+    #     # Assignments container
+    #     assignments_container = ttk.Frame(parent, bootstyle="light")
+    #     assignments_container.pack(fill=BOTH, expand=YES, padx=20, pady=10)
+        
+    #     # Store reference for updates
+    #     self.assignments_container = assignments_container
+        
+    #     # Fetch and display assignments
+    #     if self.selected_class:
+    #         self.client.view_assignments(self.selected_class['_id'])
+    
+    # def _create_materials_tab(self, parent):
+    #     """Create materials tab"""
+    #     ttk.Label(
+    #         parent,
+    #         text="Class Materials",
+    #         font=("Arial", 16, "bold"),
+    #         bootstyle="inverse-light"
+    #     ).pack(anchor=W, padx=20, pady=20)
+        
+    #     # Materials container with scrollbar
+    #     materials_container = ttk.Frame(parent, bootstyle="light")
+    #     materials_container.pack(fill=BOTH, expand=YES, padx=20, pady=10)
+        
+    #     # Store reference for updates
+    #     self.materials_container = materials_container
+        
+    #     # Fetch and display materials
+    #     if self.selected_class:
+    #         self.client.view_materials(self.selected_class['_id'])
     
     def show_expanded_view(self, item_type, item_data):
         """Show expanded view for an item"""
@@ -601,10 +775,153 @@ class StudentDashboard:
             except:
                 pass
     
+    # def _display_assignments(self):
+    #     """Display assignments in assignments tab"""
+    #     if not self.assignments_container:
+    #         return
+
+    #     # Clear existing widgets
+    #     for widget in self.assignments_container.winfo_children():
+    #         widget.destroy()
+
+    #     if not self.assignments:
+    #         ttk.Label(
+    #             self.assignments_container,
+    #             text="No assignments yet",
+    #             font=("Arial", 11),
+    #             bootstyle="inverse-secondary"
+    #         ).pack(padx=20, pady=20)
+    #         return
+
+    #     # Create scrollable frame
+    #     from tkinter import Canvas, Scrollbar
+    #     canvas = Canvas(self.assignments_container, bg="#FFFFFF", highlightthickness=0)
+    #     scrollbar = Scrollbar(self.assignments_container, orient="vertical", command=canvas.yview)
+    #     scrollable_frame = ttk.Frame(canvas, bootstyle="light")
+
+    #     scrollable_frame.bind(
+    #         "<Configure>",
+    #         lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    #     )
+
+    #     window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    #     canvas.configure(yscrollcommand=scrollbar.set)
+    
+    #     # ADD THIS BINDING TO MAKE FRAME FULL WIDTH
+    #     canvas.bind(
+    #          "<Configure>",
+    #         lambda e: canvas.itemconfig(window_id, width=e.width)
+    #     )
+
+    #      # Pack canvas and scrollbar to occupy the full available space
+    #     canvas.pack(side=LEFT, fill=BOTH, expand=True)
+    #     scrollbar.pack(side=RIGHT, fill=Y)
+
+    #     # Display each assignment - CHANGED FROM grid() TO pack()
+    #     for assignment in self.assignments:
+    #         assignment_frame = ttk.Frame(scrollable_frame, bootstyle="light")
+    #         # Changed from grid() to pack() with fill=X
+    #         assignment_frame.pack(fill=X, padx=10, pady=5)
+
+    #      # Assignment card
+    #         card = ttk.Frame(assignment_frame, bootstyle="secondary", relief="raised")
+    #         card.pack(fill=X, padx=5, pady=5)
+
+    #         # Assignment info
+    #         info_frame = ttk.Frame(card, bootstyle="secondary")
+    #         info_frame.pack(fill=X, padx=15, pady=10)
+
+    #          # Title
+    #         title_text = assignment.get('title', 'Untitled')
+
+    #         ttk.Label(
+    #             info_frame,
+    #             text=f"📝 {title_text}",
+    #             font=("Arial", 12, "bold"),
+    #             bootstyle="inverse-secondary"
+    #         ).pack(anchor=W)
+
+    #         # Description
+    #         description = assignment.get('description', '')
+    #         if description:
+    #             ttk.Label(
+    #                 info_frame,
+    #                 text=description[:100] + ('...' if len(description) > 100 else ''),
+    #                 font=("Arial", 10),
+    #                 bootstyle="inverse-secondary",
+    #                 wraplength=600
+    #             ).pack(anchor=W, pady=(5, 0))
+
+    #         # Due date and points
+    #         details_frame = ttk.Frame(info_frame, bootstyle="secondary")
+    #         details_frame.pack(fill=X, pady=(5, 0))
+
+    #         due_date = assignment.get('due_date', 'No due date')
+    #         ttk.Label(
+    #             details_frame,
+    #             text=f"📅 Due: {due_date}",
+    #             font=("Arial", 10),
+    #             bootstyle="inverse-secondary"
+    #         ).pack(side=LEFT, padx=(0, 20))
+
+    #         max_points = assignment.get('max_points', 100)
+    #         ttk.Label(
+    #             details_frame,
+    #             text=f"💯 Points: {max_points}",
+    #             font=("Arial", 10),
+    #             bootstyle="inverse-secondary"
+    #         ).pack(side=LEFT)
+
+    #         # Created date
+    #         created_at = assignment.get('created_at', '')
+    #         if created_at:
+    #             ttk.Label(
+    #                 info_frame,
+    #                 text=f"Created: {created_at}",
+    #                 font=("Arial", 9),
+    #                 bootstyle="inverse-secondary"
+    #             ).pack(anchor=W, pady=(2, 0))
+
+    #         # Submit button
+    #         ttk.Button(
+    #             info_frame,
+    #             text="📤 Submit Assignment",
+    #             bootstyle="success-outline",
+    #             command=lambda assignment=assignment: self.submit_assignment(assignment),
+    #             width=15
+    #         ).pack(anchor=E, pady=(5, 0))
+
+    #         # Expand button
+    #         ttk.Button(
+    #             info_frame,
+    #             text="🔍 Expand",
+    #             command=lambda assignment=assignment: self.show_expanded_view('assignment', {**assignment, 'class_id': self.selected_class['_id']}),
+    #             bootstyle="outline-secondary"
+    #         ).pack(anchor=E, pady=(5, 0))
+
+
+
     def _display_assignments(self):
         """Display assignments in assignments tab"""
+        print(f"[DEBUG DISPLAY] _display_assignments called")
+        
+        # CRITICAL FIX: Check if assignments_container still exists and is valid
         if not self.assignments_container:
+            print(f"[DEBUG DISPLAY] assignments_container is None, skipping")
             return
+
+        try:
+            # Check if widget still exists in window hierarchy
+            if not self.assignments_container.winfo_exists():
+                print(f"[DEBUG DISPLAY] assignments_container no longer exists, skipping")
+                self.assignments_container = None
+                return
+        except Exception as e:
+            print(f"[DEBUG DISPLAY] Error checking assignments_container: {e}")
+            self.assignments_container = None
+            return
+
+        print(f"[DEBUG DISPLAY] assignments_container is valid, displaying {len(self.assignments)} assignments")
 
         # Clear existing widgets
         for widget in self.assignments_container.winfo_children():
@@ -632,24 +949,23 @@ class StudentDashboard:
 
         window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-    
+        
         # ADD THIS BINDING TO MAKE FRAME FULL WIDTH
         canvas.bind(
-             "<Configure>",
+            "<Configure>",
             lambda e: canvas.itemconfig(window_id, width=e.width)
         )
 
-         # Pack canvas and scrollbar to occupy the full available space
+        # Pack canvas and scrollbar to occupy the full available space
         canvas.pack(side=LEFT, fill=BOTH, expand=True)
         scrollbar.pack(side=RIGHT, fill=Y)
 
-        # Display each assignment - CHANGED FROM grid() TO pack()
+        # Display each assignment
         for assignment in self.assignments:
             assignment_frame = ttk.Frame(scrollable_frame, bootstyle="light")
-            # Changed from grid() to pack() with fill=X
             assignment_frame.pack(fill=X, padx=10, pady=5)
 
-         # Assignment card
+            # Assignment card
             card = ttk.Frame(assignment_frame, bootstyle="secondary", relief="raised")
             card.pack(fill=X, padx=5, pady=5)
 
@@ -657,12 +973,12 @@ class StudentDashboard:
             info_frame = ttk.Frame(card, bootstyle="secondary")
             info_frame.pack(fill=X, padx=15, pady=10)
 
-             # Title
+            # Title
             title_text = assignment.get('title', 'Untitled')
 
             ttk.Label(
                 info_frame,
-                text=f"📝 {title_text}",
+                text=f"📚 {title_text}",
                 font=("Arial", 12, "bold"),
                 bootstyle="inverse-secondary"
             ).pack(anchor=W)
@@ -724,6 +1040,8 @@ class StudentDashboard:
                 command=lambda assignment=assignment: self.show_expanded_view('assignment', {**assignment, 'class_id': self.selected_class['_id']}),
                 bootstyle="outline-secondary"
             ).pack(anchor=E, pady=(5, 0))
+
+        print(f"[DEBUG DISPLAY] Assignments display completed")
 
 
         # Expand button added to the materials section
@@ -796,12 +1114,194 @@ class StudentDashboard:
 
 
     
+    # def _display_materials(self):
+    #     """Display materials in classwork tab - GridFS ONLY"""
+    #     if not self.materials_container:
+    #          return
+
+    #      # Clear existing widgets
+    #     for widget in self.materials_container.winfo_children():
+    #         widget.destroy()
+
+    #     if not self.materials:
+    #         ttk.Label(
+    #             self.materials_container,
+    #             text="No materials uploaded yet",
+    #             font=("Arial", 11),
+    #             bootstyle="inverse-secondary"
+    #         ).pack(padx=20, pady=20)
+    #         return
+
+    #     # Create scrollable frame
+    #     from tkinter import Canvas, Scrollbar
+    #     canvas = Canvas(self.materials_container, bg='#222222', highlightthickness=0)
+    #     scrollbar = Scrollbar(self.materials_container, orient="vertical", command=canvas.yview)
+    #     scrollable_frame = ttk.Frame(canvas, bootstyle="dark")
+
+    # # Create window FIRST
+    #     window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    
+    #     # NOW define the function that uses window_id
+    #     def configure_scrollable(e):
+    #         canvas.configure(scrollregion=canvas.bbox("all"))
+    #         # Force the scrollable frame to match canvas width
+    #         canvas.itemconfig(window_id, width=e.width)
+
+    #     scrollable_frame.bind("<Configure>", configure_scrollable)
+    
+    #     canvas.configure(yscrollcommand=scrollbar.set)
+    
+    # # You can keep this binding too, or remove it since configure_scrollable already does it
+    #     canvas.bind(
+    #         "<Configure>",
+    #         lambda e: canvas.itemconfig(window_id, width=e.width)
+    #     )
+
+    #     canvas.pack(side=LEFT, fill=BOTH, expand=YES)
+    #     scrollbar.pack(side=RIGHT, fill=Y)
+
+    #     # Display each material
+    #     for idx, material in enumerate(self.materials):
+    #         # Skip materials without file_id (invalid)
+    #         file_id = material.get('file_id') or material.get('file_id_str')
+    #         if not file_id:
+    #             continue
+    
+    #         material_frame = ttk.Frame(scrollable_frame, bootstyle="dark")
+    #         material_frame.pack(fill=X, padx=10, pady=5)
+
+    #         # Material card
+    #         card = ttk.Frame(material_frame, bootstyle="secondary", relief="raised")
+    #         card.pack(fill=X, padx=5, pady=5, expand=True)   
+    #         # Material info
+    #         info_frame = ttk.Frame(card, bootstyle="secondary")
+    #         info_frame.pack(fill=X, padx=15, pady=10, expand=True)
+
+    #         # Title and type
+    #         title_text = material.get('title', 'Untitled')
+    #         mat_type = material.get('material_type', 'Document')
+    #         filename = material.get('filename', 'Material file')
+    #         uploaded_at = material.get('uploaded_at', '')
+    #         teacher_name = material.get('teacher_name', '')
+
+    #         # Header with title
+    #         header_frame = ttk.Frame(info_frame, bootstyle="secondary")
+    #         header_frame.pack(fill=X, anchor=W)
+
+    #         ttk.Label(
+    #             header_frame,
+    #             text=f"📎 {title_text}",
+    #             font=("Arial", 12, "bold"),
+    #             bootstyle="inverse-secondary"
+    #         ).pack(side=LEFT)
+
+            
+    #         def create_download_handler(fid, fname):
+    #             def handler():
+    #                 """Download material"""
+    #                 print(f"[DEBUG STUDENT] Downloading material: {fname}, file_id: {fid}")
+        
+    #                 # Send download request
+    #                 result = self.client.download_file_binary(fid)
+        
+    #                 if not result.get('success'):
+    #                     from tkinter import messagebox
+    #                     messagebox.showerror("Error", f"Failed to start download: {result.get('error')}")
+    #                 else:
+    #                    print(f"[DEBUG STUDENT] Download request sent: {result.get('request_id')}")
+    #                 # DEFAULT IS SAVE MODE - no want_to_open attribute
+    #                 # This will trigger _save_downloaded_file in the handler
+    #             return handler
+
+    #         # Create download handler for this material
+    #         download_handler = create_download_handler(file_id, filename)
+
+    #         # Download button - SAME as before but now it works
+    #         ttk.Button(
+    #             header_frame,
+    #             text="⬇️ Download",
+    #             bootstyle="info-outline",
+    #             command=download_handler,
+    #             width=12
+    #         ).pack(side=RIGHT, padx=(10, 0))
+ 
+    #         # Material type
+    #         ttk.Label(
+    #             info_frame,
+    #             text=f"Type: {mat_type}",
+    #             font=("Arial", 10),
+    #             bootstyle="inverse-secondary"
+    #         ).pack(anchor=W, pady=(5, 0))
+
+    #         # File info
+    #         ttk.Label(
+    #             info_frame,
+    #             text=f"File: {filename}",
+    #             font=("Arial", 10),
+    #             bootstyle="inverse-secondary"
+    #         ).pack(anchor=W, pady=(2, 0))
+
+    #         # Upload date
+    #         if uploaded_at:
+    #             ttk.Label(
+    #                 info_frame,
+    #                 text=f"Uploaded: {uploaded_at}",
+    #                 font=("Arial", 9),
+    #                 bootstyle="inverse-secondary"
+    #             ).pack(anchor=W, pady=(2, 0))
+
+    #         # Teacher name (if available)
+    #         if teacher_name:
+    #             ttk.Label(
+    #                 info_frame,
+    #                 text=f"By: {teacher_name}",
+    #                 font=("Arial", 9, "italic"),
+    #                  bootstyle="inverse-secondary"
+    #             ).pack(anchor=W, pady=(2, 0))
+
+    #     # Create expand handler with captured material
+    #         def create_expand_handler(mat):
+    #             def handler():
+    #                 self.show_expanded_view('material', {
+    #                     **mat, 
+    #                     'class_id': self.selected_class['_id']
+    #                 })
+    #             return handler
+
+    #         expand_handler = create_expand_handler(material)
+
+    #         # Expand button
+    #         ttk.Button(
+    #             info_frame,
+    #             text="🔍 Expand",
+    #             command=expand_handler,
+    #             bootstyle="outline-secondary"
+    #         ).pack(pady=(5, 0))
+
+
     def _display_materials(self):
         """Display materials in classwork tab - GridFS ONLY"""
+        print(f"[DEBUG DISPLAY] _display_materials called")
+        
+        # CRITICAL FIX: Check if materials_container still exists and is valid
         if not self.materials_container:
-             return
+            print(f"[DEBUG DISPLAY] materials_container is None, skipping")
+            return
+        
+        try:
+            # Check if widget still exists in window hierarchy
+            if not self.materials_container.winfo_exists():
+                print(f"[DEBUG DISPLAY] materials_container no longer exists, skipping")
+                self.materials_container = None
+                return
+        except Exception as e:
+            print(f"[DEBUG DISPLAY] Error checking materials_container: {e}")
+            self.materials_container = None
+            return
 
-         # Clear existing widgets
+        print(f"[DEBUG DISPLAY] materials_container is valid, displaying {len(self.materials)} materials")
+
+        # Clear existing widgets
         for widget in self.materials_container.winfo_children():
             widget.destroy()
 
@@ -820,9 +1320,9 @@ class StudentDashboard:
         scrollbar = Scrollbar(self.materials_container, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas, bootstyle="dark")
 
-    # Create window FIRST
+        # Create window FIRST
         window_id = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-    
+        
         # NOW define the function that uses window_id
         def configure_scrollable(e):
             canvas.configure(scrollregion=canvas.bbox("all"))
@@ -830,10 +1330,9 @@ class StudentDashboard:
             canvas.itemconfig(window_id, width=e.width)
 
         scrollable_frame.bind("<Configure>", configure_scrollable)
-    
+        
         canvas.configure(yscrollcommand=scrollbar.set)
-    
-    # You can keep this binding too, or remove it since configure_scrollable already does it
+        
         canvas.bind(
             "<Configure>",
             lambda e: canvas.itemconfig(window_id, width=e.width)
@@ -848,13 +1347,14 @@ class StudentDashboard:
             file_id = material.get('file_id') or material.get('file_id_str')
             if not file_id:
                 continue
-    
+        
             material_frame = ttk.Frame(scrollable_frame, bootstyle="dark")
             material_frame.pack(fill=X, padx=10, pady=5)
 
             # Material card
             card = ttk.Frame(material_frame, bootstyle="secondary", relief="raised")
             card.pack(fill=X, padx=5, pady=5, expand=True)   
+            
             # Material info
             info_frame = ttk.Frame(card, bootstyle="secondary")
             info_frame.pack(fill=X, padx=15, pady=10, expand=True)
@@ -890,15 +1390,13 @@ class StudentDashboard:
                         from tkinter import messagebox
                         messagebox.showerror("Error", f"Failed to start download: {result.get('error')}")
                     else:
-                       print(f"[DEBUG STUDENT] Download request sent: {result.get('request_id')}")
-                    # DEFAULT IS SAVE MODE - no want_to_open attribute
-                    # This will trigger _save_downloaded_file in the handler
+                        print(f"[DEBUG STUDENT] Download request sent: {result.get('request_id')}")
                 return handler
 
             # Create download handler for this material
             download_handler = create_download_handler(file_id, filename)
 
-            # Download button - SAME as before but now it works
+            # Download button
             ttk.Button(
                 header_frame,
                 text="⬇️ Download",
@@ -906,7 +1404,7 @@ class StudentDashboard:
                 command=download_handler,
                 width=12
             ).pack(side=RIGHT, padx=(10, 0))
- 
+    
             # Material type
             ttk.Label(
                 info_frame,
@@ -938,10 +1436,10 @@ class StudentDashboard:
                     info_frame,
                     text=f"By: {teacher_name}",
                     font=("Arial", 9, "italic"),
-                     bootstyle="inverse-secondary"
+                    bootstyle="inverse-secondary"
                 ).pack(anchor=W, pady=(2, 0))
 
-        # Create expand handler with captured material
+            # Create expand handler with captured material
             def create_expand_handler(mat):
                 def handler():
                     self.show_expanded_view('material', {
@@ -959,6 +1457,8 @@ class StudentDashboard:
                 command=expand_handler,
                 bootstyle="outline-secondary"
             ).pack(pady=(5, 0))
+        
+        print(f"[DEBUG DISPLAY] Materials display completed")
     
     def _create_people_tab(self, parent, class_data):
         """Create people tab with teacher and students"""
@@ -1137,287 +1637,492 @@ class StudentDashboard:
         
         return filtered
     
+    # def _handle_server_message(self, message: dict):
+    #     """Handle server messages"""
+    #     msg_type = message.get("type", "")
+    #     print(f"[DEBUG STUDENT] _handle_server_message: type={msg_type}, keys={message.keys()}")
+    #     if msg_type == 'FILE_DOWNLOAD_COMPLETE':
+    #         print(f"[DEBUG STUDENT] File download complete: {message.get('filename')}")
+    
+    #         binary_data = message.get('binary_data')
+    #         filename = message.get('filename')
+    #         request_id = message.get('request_id')
+    
+    #         print(f"[DEBUG STUDENT] Request ID: {request_id}, Binary data size: {len(binary_data) if binary_data else 0}")
+    
+    #         if binary_data and filename:
+    #             # CRITICAL FIX: Use window.after() to prevent UI blocking
+    #             if hasattr(self, f'want_to_open_{request_id}'):
+    #                 # Open the file
+    #                 print(f"[DEBUG STUDENT] Opening file: {filename}")
+    #                 delattr(self, f'want_to_open_{request_id}')
+    #                 # Use after() to schedule in main thread
+    #                 if self.window and self.window.winfo_exists():
+    #                     self.window.after(0, lambda: self._open_downloaded_file(filename, binary_data, request_id))
+    #             else:
+    #                 # Save the file - DEFAULT BEHAVIOR
+    #                 print(f"[DEBUG STUDENT] Saving file: {filename}")
+    #                 # Use after() to schedule in main thread
+    #                 if self.window and self.window.winfo_exists():
+    #                     self.window.after(0, lambda: self._save_downloaded_file(filename, binary_data, request_id))
+    
+    #         # Clear binary data from message to save memory
+    #         if 'binary_data' in message:
+    #             message['binary_data'] = b''
+    
+    #         return
+        
+    #     if msg_type == 'MESSAGE':
+    #         # This is a real-time message broadcast from discussion
+    #         print(f"[DEBUG STUDENT] Received real-time MESSAGE: {message.get('message', {})}")
+            
+    #         # Get the message data
+    #         message_data = message.get('message', {})
+            
+    #         # Check if this message is for the current class
+    #         if (hasattr(self, 'selected_class') and self.selected_class and 
+    #             message_data.get('class_id') == self.selected_class.get('_id')):
+
+    #             print(f"[DEBUG STUDENT] Message is for current class, updating discussion GUI")
+
+    #             # Update discussion GUI on main thread if it exists
+    #             if hasattr(self, 'discussion_gui') and self.discussion_gui:
+    #                 try:
+    #                     if hasattr(self, 'window') and self.window:
+    #                         self.window.after(0, lambda md=message_data: self.discussion_gui.add_new_message(md))
+    #                     else:
+    #                         # Fallback: call directly (best-effort)
+    #                         self.discussion_gui.add_new_message(message_data)
+    #                 except Exception as e:
+    #                     print(f"[DEBUG STUDENT] Error scheduling discussion update: {e}")
+    #             else:
+    #                 print(f"[DEBUG STUDENT] No discussion_gui found to update")
+            
+    #         return  # Don't process further
+
+        
+    #     if msg_type == "SUCCESS":
+    #         if "classes" in message:
+    #             self.classes = message.get("classes", [])
+    #             self._update_sidebar_classes()
+    #             if self.current_view == "home":
+    #                 self._show_home_page()
+            
+
+    #         elif 'messages' in message:
+    #             # Handle FETCH_MESSAGES response
+    #             msgs = message.get('messages', [])
+    #             print(f"[DEBUG STUDENT] Received messages: {len(msgs)}")
+
+    #             # Forward messages to DiscussionGUI if present.
+    #             # Previously we checked the class_id inside the first message which
+    #             # could race with selected_class changes; forward to the active
+    #             # discussion GUI directly to ensure UI updates.
+    #             if hasattr(self, 'discussion_gui') and self.discussion_gui:
+    #                 try:
+    #                     active_id = None
+    #                     if hasattr(self, 'selected_class') and self.selected_class:
+    #                         active_id = self.selected_class.get('_id')
+    #                     print(f"[DEBUG STUDENT] Forwarding fetched messages to discussion_gui (active class: {active_id})")
+    #                     # Attach metadata so DiscussionGUI can quickly verify target class
+    #                     forwarded = dict(message)
+    #                     forwarded['_for_class_id'] = active_id
+    #                     if hasattr(self, 'window') and self.window:
+    #                         self.window.after(0, lambda m=forwarded: self.discussion_gui.handle_server_message(m))
+    #                     else:
+    #                         self.discussion_gui.handle_server_message(forwarded)
+    #                 except Exception as e:
+    #                     print(f"[DEBUG STUDENT] Error scheduling discussion messages: {e}")
+    #             else:
+    #                 print(f"[DEBUG STUDENT] No discussion_gui found to update")
+
+    #             return  # Don't process further
+    #         elif 'message' in message:
+    #             # Handle single-message SUCCESS response (e.g., after POST_MESSAGE)
+    #             print(f"[DEBUG STUDENT] Received single message response: {message.get('message', {})}")
+    #             message_data = message.get('message', {})
+
+    #             # Forward to discussion GUI if it's for the current class
+    #             if (hasattr(self, 'selected_class') and self.selected_class and
+    #                 message_data and message_data.get('class_id') == self.selected_class.get('_id')):
+    #                 if hasattr(self, 'discussion_gui') and self.discussion_gui:
+    #                     try:
+    #                         if hasattr(self, 'window') and self.window:
+    #                             self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+    #                         else:
+    #                             self.discussion_gui.handle_server_message(message)
+    #                     except Exception as e:
+    #                         print(f"[DEBUG STUDENT] Error scheduling single message forward: {e}")
+    #                 else:
+    #                     print(f"[DEBUG STUDENT] No discussion_gui found to forward single message")
+
+    #             return
+            
+            
+    #         elif "submission_id" in message:
+    #             # Handle SUBMIT_ASSIGNMENT success response
+    #             print("[DEBUG STUDENT] Assignment submitted successfully, refreshing assignments")
+    #             # Refresh assignments after a brief delay to ensure DB is updated
+    #             if self.selected_class:
+    #                 self.window.after(500, lambda: self.client.view_assignments(self.selected_class['_id']))
+    #         elif "class_id" in message and message.get("success"):
+    #             # Handle JOIN_CLASS success response - refresh class list
+    #             print("[DEBUG STUDENT] Class joined successfully, refreshing class list")
+    #             self.client.view_classes()
+    #             messagebox.showinfo("Success", "You have successfully joined the class!")
+    #         elif "announcements" in message:
+    #             # Handle VIEW_ANNOUNCEMENTS response
+    #             print(f"[DEBUG STUDENT] Received announcements: count={len(message.get('announcements', []))}")
+    #             self.announcements = message.get("announcements", [])
+    #             print(f"[DEBUG STUDENT] self.announcements set to: {len(self.announcements)} items")
+                
+    #             # Cache announcements for this class
+    #             if self.selected_class:
+    #                 class_id = self.selected_class["_id"]
+    #                 self.announcements_cache[class_id] = self.announcements
+    #                 print(f"[DEBUG STUDENT] Cached announcements for class: {class_id}")
+                
+    #             print(f"[DEBUG STUDENT] About to call _update_stream_display")
+    #             if hasattr(self, 'window') and self.window:
+    #                 self.window.after(0, self._update_stream_display)
+    #             else:
+    #                 self._update_stream_display()
+    #             print(f"[DEBUG STUDENT] _update_stream_display scheduled")
+    #         elif "notifications" in message:
+    #             # Handle GET_NOTIFICATIONS response
+    #             notifications = message.get("notifications", [])
+    #             # Convert database notifications to display format
+    #             self.notification_history = []
+    #             unread_count = 0
+    #             latest_unread = None
+                
+    #             for notif in notifications:
+    #                 # Extract data from stored notification
+    #                 notif_data = notif.get('data', {})
+    #                 notif_data['received_at'] = notif.get('created_at', '')
+    #                 self.notification_history.append(notif_data)
+                    
+    #                 # Count unread notifications
+    #                 if not notif.get('read', False):
+    #                     unread_count += 1
+    #                     if latest_unread is None:
+    #                         latest_unread = notif_data
+                
+    #             print(f"[DEBUG] Loaded {len(self.notification_history)} notifications from database ({unread_count} unread)")
+                
+    #             # Show messagebox for latest unread notification if any
+    #             if unread_count > 0 and latest_unread:
+    #                 notif_type = latest_unread.get('type', '')
+    #                 if notif_type == 'NEW_ANNOUNCEMENT':
+    #                     class_name = latest_unread.get('class_name', 'Unknown Class')
+    #                     announcement_title = latest_unread.get('announcement_title', 'New Announcement')
+    #                     content_preview = latest_unread.get('content_preview', '')
+                        
+    #                     msg = f"Class: {class_name}\nAnnouncement: {announcement_title}"
+    #                     if content_preview:
+    #                         msg += f"\n\n{content_preview[:100]}..."
+                        
+    #                     if unread_count > 1:
+    #                         msg += f"\n\n(+{unread_count - 1} more unread notification{'s' if unread_count > 2 else ''})"
+                        
+    #                     if hasattr(self, 'window') and self.window:
+    #                         self.window.after(100, lambda: messagebox.showinfo("New Announcement", msg))
+    #         elif "materials" in message:
+    #             # Handle VIEW_MATERIALS response
+    #             self.materials = message.get("materials", [])
+    #             print(f"[DEBUG STUDENT] Received materials: count={len(self.materials)}")
+    #             if hasattr(self, 'materials_container') and self.materials_container:
+    #                 print(f"[DEBUG STUDENT] materials_container exists, calling _display_materials")
+    #                 try:
+    #                     self.window.after(0, self._display_materials)
+    #                 except Exception as e:
+    #                     print(f"[DEBUG STUDENT] Error displaying materials: {e}")
+    #             else:
+    #                 print(f"[DEBUG STUDENT] materials_container not available yet")
+    #         elif "assignments" in message:
+    #             # Check if this is for TO-DO page (all assignments) or class-specific assignments
+    #             assignments = message.get("assignments", [])
+                
+    #             # If we're on the todo page and assignments have class_name, it's for todo
+    #             if self.current_view == "todo" and assignments and 'class_name' in assignments[0]:
+    #                 print(f"[DEBUG STUDENT] Received all assignments for TO-DO page: count={len(assignments)}")
+    #                 self.window.after(0, lambda: self._display_all_assignments(assignments))
+    #             else:
+    #                 # Handle VIEW_ASSIGNMENTS response for specific class
+    #                 self.assignments = assignments
+    #                 print(f"[DEBUG STUDENT] Received assignments: count={len(self.assignments)}")
+    #                 if hasattr(self, 'assignments_container') and self.assignments_container:
+    #                     print(f"[DEBUG STUDENT] assignments_container exists, calling _display_assignments")
+    #                     try:
+    #                         self.window.after(0, self._display_assignments)
+    #                     except Exception as e:
+    #                         print(f"[DEBUG STUDENT] Error displaying assignments: {e}")
+    #                 else:
+    #                     print(f"[DEBUG STUDENT] assignments_container not available yet")
+    #         elif "submission" in message:
+    #             # Handle GET_STUDENT_SUBMISSION response
+    #             import os
+    #             import subprocess
+                
+    #             submission = message.get("submission")
+    #             print(f"[DEBUG] Received submission response: {submission}")
+                
+    #             if submission and isinstance(submission, dict):
+    #                 file_path = submission.get('file_path')
+    #                 if file_path and os.path.exists(file_path):
+    #                     try:
+    #                         # Open the file
+    #                         subprocess.run(['open', file_path], check=True)
+    #                         print(f"[DEBUG] Successfully opened file: {file_path}")
+    #                     except Exception as e:
+    #                         print(f"[DEBUG] Error opening file: {e}")
+    #                         self.window.after(0, lambda: messagebox.showerror("Error", f"Could not open file: {str(e)}"))
+    #                 elif file_path:
+    #                     print(f"[DEBUG] File not found: {file_path}")
+    #                     self.window.after(0, lambda: messagebox.showerror("Error", f"Submission file not found at:\n{file_path}"))
+    #                 else:
+    #                     print(f"[DEBUG] No file_path in submission")
+    #                     self.window.after(0, lambda: messagebox.showinfo("No File", "This submission has no file attached"))
+    #             else:
+    #                 print(f"[DEBUG] No submission found or invalid format")
+    #                 # Don't show message here - will be handled by ERROR response
+    #         elif "comments" in message:
+    #             # Handle VIEW_COMMENTS response
+    #             print(f"[DEBUG COMMENTS] Received comments response: {len(message.get('comments', []))} comments")
+    #             if self.current_expand_view:
+    #                 self.current_expand_view.comments = message.get("comments", [])
+    #                 print(f"[DEBUG COMMENTS] Set comments on expand_view, calling _update_comments_display()")
+    #                 self.current_expand_view._update_comments_display()
+    #             else:
+    #                 print(f"[DEBUG COMMENTS] No current_expand_view to update comments")
+    #         elif "comment_id" in message:
+    #             # Handle POST_COMMENT success, refresh comments
+    #             if self.current_expand_view:
+    #                 self.current_expand_view._load_comments()
+    #         elif message.get("message", "").startswith("Successfully joined"):
+    #             # Refresh classes first to show the new class immediately
+    #             self.client.view_classes()
+    #             # Show success message after a brief delay to allow UI update
+    #             self.window.after(100, lambda: messagebox.showinfo("Success", message.get("message")))
+    #     elif msg_type == "NOTIFICATION":
+    #         # Handle real-time TCP notification
+    #         print(f"[DEBUG] Received NOTIFICATION: {message}")
+    #         self._handle_notification(message.get("notification", {}))
+    #     elif msg_type == "ERROR":
+    #         error_msg = message.get("error", "Unknown error")
+    #         print(f"[DEBUG] ERROR message received: {error_msg}")
+    #         # Handle GET_STUDENT_SUBMISSION error when no submission exists
+    #         if error_msg == "No submission found":
+    #             print(f"[DEBUG] Showing 'No submission found' dialog")
+    #             self.window.after(0, lambda: messagebox.showinfo("No Submission", "You haven't submitted this assignment yet"))
+    #         # Don't show connection errors or bad window errors
+    #         elif "connection" not in error_msg.lower() and "bad window" not in error_msg.lower():
+    #             try:
+    #                 if self.window and self.window.winfo_exists():
+    #                     messagebox.showerror("Error", error_msg)
+    #             except:
+    #                 pass  # Window closed, ignore
+    
+
     def _handle_server_message(self, message: dict):
-        """Handle server messages"""
-        msg_type = message.get("type", "")
-        print(f"[DEBUG STUDENT] _handle_server_message: type={msg_type}, keys={message.keys()}")
-        if msg_type == 'FILE_DOWNLOAD_COMPLETE':
-            print(f"[DEBUG STUDENT] File download complete: {message.get('filename')}")
-    
-            binary_data = message.get('binary_data')
-            filename = message.get('filename')
-            request_id = message.get('request_id')
-    
-            print(f"[DEBUG STUDENT] Request ID: {request_id}, Binary data size: {len(binary_data) if binary_data else 0}")
-    
-            if binary_data and filename:
-                # CRITICAL FIX: Use window.after() to prevent UI blocking
-                if hasattr(self, f'want_to_open_{request_id}'):
-                    # Open the file
-                    print(f"[DEBUG STUDENT] Opening file: {filename}")
-                    delattr(self, f'want_to_open_{request_id}')
-                    # Use after() to schedule in main thread
-                    if self.window and self.window.winfo_exists():
-                        self.window.after(0, lambda: self._open_downloaded_file(filename, binary_data, request_id))
-                else:
-                    # Save the file - DEFAULT BEHAVIOR
-                    print(f"[DEBUG STUDENT] Saving file: {filename}")
-                    # Use after() to schedule in main thread
-                    if self.window and self.window.winfo_exists():
-                        self.window.after(0, lambda: self._save_downloaded_file(filename, binary_data, request_id))
-    
-            # Clear binary data from message to save memory
-            if 'binary_data' in message:
-                message['binary_data'] = b''
-    
-            return
+            """Handle server messages"""
+            msg_type = message.get("type", "")
+            # print(f"[DEBUG STUDENT] _handle_server_message: type={msg_type}, keys={message.keys()}")
+            
+            if msg_type == 'FILE_DOWNLOAD_COMPLETE':
+                print(f"[DEBUG STUDENT] File download complete: {message.get('filename')}")
         
-        if msg_type == 'MESSAGE':
-            # This is a real-time message broadcast from discussion
-            print(f"[DEBUG STUDENT] Received real-time MESSAGE: {message.get('message', {})}")
-            
-            # Get the message data
-            message_data = message.get('message', {})
-            
-            # Check if this message is for the current class
-            if (hasattr(self, 'selected_class') and self.selected_class and 
-                message_data.get('class_id') == self.selected_class.get('_id')):
-
-                print(f"[DEBUG STUDENT] Message is for current class, updating discussion GUI")
-
-                # Update discussion GUI on main thread if it exists
-                if hasattr(self, 'discussion_gui') and self.discussion_gui:
-                    try:
-                        if hasattr(self, 'window') and self.window:
-                            self.window.after(0, lambda md=message_data: self.discussion_gui.add_new_message(md))
-                        else:
-                            # Fallback: call directly (best-effort)
-                            self.discussion_gui.add_new_message(message_data)
-                    except Exception as e:
-                        print(f"[DEBUG STUDENT] Error scheduling discussion update: {e}")
-                else:
-                    print(f"[DEBUG STUDENT] No discussion_gui found to update")
-            
-            return  # Don't process further
-
+                binary_data = message.get('binary_data')
+                filename = message.get('filename')
+                request_id = message.get('request_id')
         
-        if msg_type == "SUCCESS":
-            if "classes" in message:
-                self.classes = message.get("classes", [])
-                self._update_sidebar_classes()
-                if self.current_view == "home":
-                    self._show_home_page()
-            
-
-            elif 'messages' in message:
-                # Handle FETCH_MESSAGES response
-                print(f"[DEBUG STUDENT] Received messages: {len(message['messages'])}")
-                
-                # Check if this is for the current class
-                if (hasattr(self, 'selected_class') and self.selected_class and 
-                    message['messages'] and 
-                    message['messages'][0].get('class_id') == self.selected_class.get('_id')):
-
-                    print(f"[DEBUG STUDENT] Messages are for current class, updating discussion GUI")
-
-                    # Update discussion GUI on main thread if it exists
-                    if hasattr(self, 'discussion_gui') and self.discussion_gui:
-                        try:
-                            if hasattr(self, 'window') and self.window:
-                                self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
-                            else:
-                                self.discussion_gui.handle_server_message(message)
-                        except Exception as e:
-                            print(f"[DEBUG STUDENT] Error scheduling discussion messages: {e}")
+                if binary_data and filename:
+                    if hasattr(self, f'want_to_open_{request_id}'):
+                        delattr(self, f'want_to_open_{request_id}')
+                        if self.window and self.window.winfo_exists():
+                            self.window.after(0, lambda: self._open_downloaded_file(filename, binary_data, request_id))
                     else:
-                        print(f"[DEBUG STUDENT] No discussion_gui found to update")
-                
-                return  # Don't process further
-            elif 'message' in message:
-                # Handle single-message SUCCESS response (e.g., after POST_MESSAGE)
-                print(f"[DEBUG STUDENT] Received single message response: {message.get('message', {})}")
-                message_data = message.get('message', {})
-
-                # Forward to discussion GUI if it's for the current class
-                if (hasattr(self, 'selected_class') and self.selected_class and
-                    message_data and message_data.get('class_id') == self.selected_class.get('_id')):
-                    if hasattr(self, 'discussion_gui') and self.discussion_gui:
-                        try:
-                            if hasattr(self, 'window') and self.window:
-                                self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
-                            else:
-                                self.discussion_gui.handle_server_message(message)
-                        except Exception as e:
-                            print(f"[DEBUG STUDENT] Error scheduling single message forward: {e}")
-                    else:
-                        print(f"[DEBUG STUDENT] No discussion_gui found to forward single message")
-
+                        if self.window and self.window.winfo_exists():
+                            self.window.after(0, lambda: self._save_downloaded_file(filename, binary_data, request_id))
+        
+                if 'binary_data' in message:
+                    message['binary_data'] = b''
+        
                 return
             
+            if msg_type == 'MESSAGE':
+                message_data = message.get('message', {})
+                if (hasattr(self, 'selected_class') and self.selected_class and 
+                    message_data.get('class_id') == self.selected_class.get('_id')):
+
+                    if hasattr(self, 'discussion_gui') and self.discussion_gui:
+                        try:
+                            if hasattr(self, 'window') and self.window:
+                                self.window.after(0, lambda md=message_data: self.discussion_gui.add_new_message(md))
+                            else:
+                                self.discussion_gui.add_new_message(message_data)
+                        except Exception as e:
+                            print(f"[DEBUG STUDENT] Error scheduling discussion update: {e}")
+                return
+
             
-            elif "submission_id" in message:
-                # Handle SUBMIT_ASSIGNMENT success response
-                print("[DEBUG STUDENT] Assignment submitted successfully, refreshing assignments")
-                # Refresh assignments after a brief delay to ensure DB is updated
-                if self.selected_class:
-                    self.window.after(500, lambda: self.client.view_assignments(self.selected_class['_id']))
-            elif "class_id" in message and message.get("success"):
-                # Handle JOIN_CLASS success response - refresh class list
-                print("[DEBUG STUDENT] Class joined successfully, refreshing class list")
-                self.client.view_classes()
-                messagebox.showinfo("Success", "You have successfully joined the class!")
-            elif "announcements" in message:
-                # Handle VIEW_ANNOUNCEMENTS response
-                print(f"[DEBUG STUDENT] Received announcements: count={len(message.get('announcements', []))}")
-                self.announcements = message.get("announcements", [])
-                print(f"[DEBUG STUDENT] self.announcements set to: {len(self.announcements)} items")
+            if msg_type == "SUCCESS":
+                if "classes" in message:
+                    self.classes = message.get("classes", [])
+                    self._update_sidebar_classes()
+                    if self.current_view == "home":
+                        self._show_home_page()
+
+                elif 'messages' in message:
+                    msgs = message.get('messages', [])
+                    if hasattr(self, 'discussion_gui') and self.discussion_gui:
+                        try:
+                            active_id = None
+                            if hasattr(self, 'selected_class') and self.selected_class:
+                                active_id = self.selected_class.get('_id')
+                            forwarded = dict(message)
+                            forwarded['_for_class_id'] = active_id
+                            if hasattr(self, 'window') and self.window:
+                                self.window.after(0, lambda m=forwarded: self.discussion_gui.handle_server_message(m))
+                            else:
+                                self.discussion_gui.handle_server_message(forwarded)
+                        except Exception as e:
+                            print(f"[DEBUG STUDENT] Error scheduling discussion messages: {e}")
+                    return 
+
+                elif 'message' in message:
+                    # Handle single-message SUCCESS response
+                    raw_msg = message.get('message')
+                    print(f"[DEBUG STUDENT] Received single message response: {raw_msg}")
+
+                    # === BUG FIX START ===
+                    # Check if it is a dictionary (chat object) or a string (status message)
+                    if isinstance(raw_msg, dict):
+                        message_data = raw_msg
+                        # Forward to discussion GUI if it's for the current class
+                        if (hasattr(self, 'selected_class') and self.selected_class and
+                            message_data.get('class_id') == self.selected_class.get('_id')):
+                            
+                            if hasattr(self, 'discussion_gui') and self.discussion_gui:
+                                try:
+                                    if hasattr(self, 'window') and self.window:
+                                        self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+                                    else:
+                                        self.discussion_gui.handle_server_message(message)
+                                except Exception as e:
+                                    print(f"[DEBUG STUDENT] Error scheduling single message forward: {e}")
+                    else:
+                        # It is a string (e.g., "File sent successfully"), just ignore it to prevent crash
+                        print(f"[DEBUG STUDENT] Ignoring status message: {raw_msg}")
+                    # === BUG FIX END ===
+
+                    return
                 
-                # Cache announcements for this class
-                if self.selected_class:
-                    class_id = self.selected_class["_id"]
-                    self.announcements_cache[class_id] = self.announcements
-                    print(f"[DEBUG STUDENT] Cached announcements for class: {class_id}")
-                
-                print(f"[DEBUG STUDENT] About to call _update_stream_display")
-                if hasattr(self, 'window') and self.window:
-                    self.window.after(0, self._update_stream_display)
-                else:
-                    self._update_stream_display()
-                print(f"[DEBUG STUDENT] _update_stream_display scheduled")
-            elif "notifications" in message:
-                # Handle GET_NOTIFICATIONS response
-                notifications = message.get("notifications", [])
-                # Convert database notifications to display format
-                self.notification_history = []
-                unread_count = 0
-                latest_unread = None
-                
-                for notif in notifications:
-                    # Extract data from stored notification
-                    notif_data = notif.get('data', {})
-                    notif_data['received_at'] = notif.get('created_at', '')
-                    self.notification_history.append(notif_data)
+                elif "submission_id" in message:
+                    if self.selected_class:
+                        self.window.after(500, lambda: self.client.view_assignments(self.selected_class['_id']))
+                elif "class_id" in message and message.get("success"):
+                    self.client.view_classes()
+                    messagebox.showinfo("Success", "You have successfully joined the class!")
+                elif "announcements" in message:
+                    self.announcements = message.get("announcements", [])
+                    if self.selected_class:
+                        class_id = self.selected_class["_id"]
+                        self.announcements_cache[class_id] = self.announcements
                     
-                    # Count unread notifications
-                    if not notif.get('read', False):
-                        unread_count += 1
-                        if latest_unread is None:
-                            latest_unread = notif_data
-                
-                print(f"[DEBUG] Loaded {len(self.notification_history)} notifications from database ({unread_count} unread)")
-                
-                # Show messagebox for latest unread notification if any
-                if unread_count > 0 and latest_unread:
-                    notif_type = latest_unread.get('type', '')
-                    if notif_type == 'NEW_ANNOUNCEMENT':
-                        class_name = latest_unread.get('class_name', 'Unknown Class')
-                        announcement_title = latest_unread.get('announcement_title', 'New Announcement')
-                        content_preview = latest_unread.get('content_preview', '')
+                    if hasattr(self, 'window') and self.window:
+                        self.window.after(0, self._update_stream_display)
+                    else:
+                        self._update_stream_display()
+                elif "notifications" in message:
+                    notifications = message.get("notifications", [])
+                    self.notification_history = []
+                    unread_count = 0
+                    latest_unread = None
+                    
+                    for notif in notifications:
+                        notif_data = notif.get('data', {})
+                        notif_data['received_at'] = notif.get('created_at', '')
+                        self.notification_history.append(notif_data)
                         
-                        msg = f"Class: {class_name}\nAnnouncement: {announcement_title}"
-                        if content_preview:
-                            msg += f"\n\n{content_preview[:100]}..."
-                        
-                        if unread_count > 1:
-                            msg += f"\n\n(+{unread_count - 1} more unread notification{'s' if unread_count > 2 else ''})"
-                        
-                        if hasattr(self, 'window') and self.window:
-                            self.window.after(100, lambda: messagebox.showinfo("New Announcement", msg))
-            elif "materials" in message:
-                # Handle VIEW_MATERIALS response
-                self.materials = message.get("materials", [])
-                print(f"[DEBUG STUDENT] Received materials: count={len(self.materials)}")
-                if hasattr(self, 'materials_container') and self.materials_container:
-                    print(f"[DEBUG STUDENT] materials_container exists, calling _display_materials")
+                        if not notif.get('read', False):
+                            unread_count += 1
+                            if latest_unread is None:
+                                latest_unread = notif_data
+                    
+                    if unread_count > 0 and latest_unread:
+                        notif_type = latest_unread.get('type', '')
+                        if notif_type == 'NEW_ANNOUNCEMENT':
+                            class_name = latest_unread.get('class_name', 'Unknown Class')
+                            announcement_title = latest_unread.get('announcement_title', 'New Announcement')
+                            content_preview = latest_unread.get('content_preview', '')
+                            
+                            msg = f"Class: {class_name}\nAnnouncement: {announcement_title}"
+                            if content_preview:
+                                msg += f"\n\n{content_preview[:100]}..."
+                            
+                            if unread_count > 1:
+                                msg += f"\n\n(+{unread_count - 1} more unread notification{'s' if unread_count > 2 else ''})"
+                            
+                            if hasattr(self, 'window') and self.window:
+                                self.window.after(100, lambda: messagebox.showinfo("New Announcement", msg))
+                elif "materials" in message:
+                    self.materials = message.get("materials", [])
+                    if hasattr(self, 'materials_container') and self.materials_container:
+                        try:
+                            self.window.after(0, self._display_materials)
+                        except Exception as e:
+                            print(f"[DEBUG STUDENT] Error displaying materials: {e}")
+                elif "assignments" in message:
+                    assignments = message.get("assignments", [])
+                    if self.current_view == "todo" and assignments and 'class_name' in assignments[0]:
+                        self.window.after(0, lambda: self._display_all_assignments(assignments))
+                    else:
+                        self.assignments = assignments
+                        if hasattr(self, 'assignments_container') and self.assignments_container:
+                            try:
+                                self.window.after(0, self._display_assignments)
+                            except Exception as e:
+                                print(f"[DEBUG STUDENT] Error displaying assignments: {e}")
+                elif "submission" in message:
+                    import os
+                    import subprocess
+                    
+                    submission = message.get("submission")
+                    
+                    if submission and isinstance(submission, dict):
+                        file_path = submission.get('file_path')
+                        if file_path and os.path.exists(file_path):
+                            try:
+                                subprocess.run(['open', file_path], check=True)
+                            except Exception as e:
+                                self.window.after(0, lambda: messagebox.showerror("Error", f"Could not open file: {str(e)}"))
+                        elif file_path:
+                            self.window.after(0, lambda: messagebox.showerror("Error", f"Submission file not found at:\n{file_path}"))
+                        else:
+                            self.window.after(0, lambda: messagebox.showinfo("No File", "This submission has no file attached"))
+                elif "comments" in message:
+                    if self.current_expand_view:
+                        self.current_expand_view.comments = message.get("comments", [])
+                        self.current_expand_view._update_comments_display()
+                elif "comment_id" in message:
+                    if self.current_expand_view:
+                        self.current_expand_view._load_comments()
+                elif message.get("message", "").startswith("Successfully joined"):
+                    self.client.view_classes()
+                    self.window.after(100, lambda: messagebox.showinfo("Success", message.get("message")))
+            elif msg_type == "NOTIFICATION":
+                self._handle_notification(message.get("notification", {}))
+            elif msg_type == "ERROR":
+                error_msg = message.get("error", "Unknown error")
+                if error_msg == "No submission found":
+                    self.window.after(0, lambda: messagebox.showinfo("No Submission", "You haven't submitted this assignment yet"))
+                elif "connection" not in error_msg.lower() and "bad window" not in error_msg.lower():
                     try:
-                        self.window.after(0, self._display_materials)
-                    except Exception as e:
-                        print(f"[DEBUG STUDENT] Error displaying materials: {e}")
-                else:
-                    print(f"[DEBUG STUDENT] materials_container not available yet")
-            elif "assignments" in message:
-                # Check if this is for TO-DO page (all assignments) or class-specific assignments
-                assignments = message.get("assignments", [])
-                
-                # If we're on the todo page and assignments have class_name, it's for todo
-                if self.current_view == "todo" and assignments and 'class_name' in assignments[0]:
-                    print(f"[DEBUG STUDENT] Received all assignments for TO-DO page: count={len(assignments)}")
-                    self.window.after(0, lambda: self._display_all_assignments(assignments))
-                else:
-                    # Handle VIEW_ASSIGNMENTS response for specific class
-                    self.assignments = assignments
-                    print(f"[DEBUG STUDENT] Received assignments: count={len(self.assignments)}")
-                    if hasattr(self, 'assignments_container') and self.assignments_container:
-                        print(f"[DEBUG STUDENT] assignments_container exists, calling _display_assignments")
-                        try:
-                            self.window.after(0, self._display_assignments)
-                        except Exception as e:
-                            print(f"[DEBUG STUDENT] Error displaying assignments: {e}")
-                    else:
-                        print(f"[DEBUG STUDENT] assignments_container not available yet")
-            elif "submission" in message:
-                # Handle GET_STUDENT_SUBMISSION response
-                import os
-                import subprocess
-                
-                submission = message.get("submission")
-                print(f"[DEBUG] Received submission response: {submission}")
-                
-                if submission and isinstance(submission, dict):
-                    file_path = submission.get('file_path')
-                    if file_path and os.path.exists(file_path):
-                        try:
-                            # Open the file
-                            subprocess.run(['open', file_path], check=True)
-                            print(f"[DEBUG] Successfully opened file: {file_path}")
-                        except Exception as e:
-                            print(f"[DEBUG] Error opening file: {e}")
-                            self.window.after(0, lambda: messagebox.showerror("Error", f"Could not open file: {str(e)}"))
-                    elif file_path:
-                        print(f"[DEBUG] File not found: {file_path}")
-                        self.window.after(0, lambda: messagebox.showerror("Error", f"Submission file not found at:\n{file_path}"))
-                    else:
-                        print(f"[DEBUG] No file_path in submission")
-                        self.window.after(0, lambda: messagebox.showinfo("No File", "This submission has no file attached"))
-                else:
-                    print(f"[DEBUG] No submission found or invalid format")
-                    # Don't show message here - will be handled by ERROR response
-            elif "comments" in message:
-                # Handle VIEW_COMMENTS response
-                print(f"[DEBUG COMMENTS] Received comments response: {len(message.get('comments', []))} comments")
-                if self.current_expand_view:
-                    self.current_expand_view.comments = message.get("comments", [])
-                    print(f"[DEBUG COMMENTS] Set comments on expand_view, calling _update_comments_display()")
-                    self.current_expand_view._update_comments_display()
-                else:
-                    print(f"[DEBUG COMMENTS] No current_expand_view to update comments")
-            elif "comment_id" in message:
-                # Handle POST_COMMENT success, refresh comments
-                if self.current_expand_view:
-                    self.current_expand_view._load_comments()
-            elif message.get("message", "").startswith("Successfully joined"):
-                # Refresh classes first to show the new class immediately
-                self.client.view_classes()
-                # Show success message after a brief delay to allow UI update
-                self.window.after(100, lambda: messagebox.showinfo("Success", message.get("message")))
-        elif msg_type == "NOTIFICATION":
-            # Handle real-time TCP notification
-            print(f"[DEBUG] Received NOTIFICATION: {message}")
-            self._handle_notification(message.get("notification", {}))
-        elif msg_type == "ERROR":
-            error_msg = message.get("error", "Unknown error")
-            print(f"[DEBUG] ERROR message received: {error_msg}")
-            # Handle GET_STUDENT_SUBMISSION error when no submission exists
-            if error_msg == "No submission found":
-                print(f"[DEBUG] Showing 'No submission found' dialog")
-                self.window.after(0, lambda: messagebox.showinfo("No Submission", "You haven't submitted this assignment yet"))
-            # Don't show connection errors or bad window errors
-            elif "connection" not in error_msg.lower() and "bad window" not in error_msg.lower():
-                try:
-                    if self.window and self.window.winfo_exists():
-                        messagebox.showerror("Error", error_msg)
-                except:
-                    pass  # Window closed, ignore
+                        if self.window and self.window.winfo_exists():
+                            messagebox.showerror("Error", error_msg)
+                    except:
+                        pass
     
     def _handle_notification(self, notification):
         """Handle incoming real-time notification"""
@@ -2014,50 +2719,50 @@ class StudentDashboard:
     def _save_downloaded_file(self, filename, binary_data, request_id=None):
         """Save a downloaded file"""
         print(f"[DEBUG STUDENT SAVE] _save_downloaded_file called: {filename}, data size: {len(binary_data) if binary_data else 0}")
-    
+
         from tkinter import filedialog, messagebox
-    
+
         try:
-            # CRITICAL: Validate binary data
+            # Validate binary data
             if not binary_data:
                 print(f"[ERROR STUDENT SAVE] No binary data received")
                 messagebox.showerror("Error", "No file data received")
                 return
-        
+
             if not isinstance(binary_data, bytes):
                 print(f"[ERROR STUDENT SAVE] Binary data is not bytes, type: {type(binary_data)}")
                 messagebox.showerror("Error", "File data is corrupted")
                 return
-        
+
             print(f"[DEBUG STUDENT SAVE] Showing save dialog for: {filename}")
-        
-            # Ask user where to save
+
+            # Ask user where to save (must run on main thread)
             save_path = filedialog.asksaveasfilename(
                 defaultextension="",
                 initialfile=filename,
-                filetypes=[("All Files", "*.*")]
+                filetypes=[("All Files", "*")]
             )
-        
+
             print(f"[DEBUG STUDENT SAVE] User selected path: {save_path}")
-        
+
             if save_path:
-                # Save the file
+                # Save the file synchronously (same behavior as teacher)
                 with open(save_path, 'wb') as f:
                     f.write(binary_data)
-            
+
                 print(f"[DEBUG STUDENT SAVE] File saved successfully: {save_path}")
-            
+
                 messagebox.showinfo(
-                    "Success", 
+                    "Success",
                     f"✅ File saved successfully!\n\n"
                     f"📄 {filename}\n"
                     f"📦 Size: {len(binary_data):,} bytes\n"
                     f"📁 Location: {save_path}"
                 )
             else:
-               print(f"[DEBUG STUDENT SAVE] User cancelled save")
-               messagebox.showinfo("Cancelled", "Download cancelled")
-            
+                print(f"[DEBUG STUDENT SAVE] User cancelled save")
+                messagebox.showinfo("Cancelled", "Download cancelled")
+
         except Exception as e:
             print(f"[ERROR STUDENT SAVE] Exception: {e}")
             import traceback
@@ -2065,83 +2770,60 @@ class StudentDashboard:
             messagebox.showerror("Error", f"Cannot save file: {str(e)}")
 
     def _open_downloaded_file(self, filename, binary_data, request_id=None):
-        """Open a downloaded file directly"""
+        """Open a downloaded file directly (writes a temp file and opens it)."""
         print(f"[DEBUG STUDENT OPEN] _open_downloaded_file called: {filename}, data size: {len(binary_data) if binary_data else 0}")
-    
+
         from tkinter import messagebox
         import tempfile
         import os
         import subprocess
         import sys
-    
+        import traceback
+
         try:
-            # CRITICAL: Validate binary data
-            if not binary_data:
-                print(f"[ERROR STUDENT OPEN] No binary data received")
-                messagebox.showerror("Error", "No file data received")
+            # Validate binary data
+            if not binary_data or not isinstance(binary_data, bytes):
+                print(f"[ERROR STUDENT OPEN] Invalid binary data")
+                messagebox.showerror("Error", "No valid file data received")
                 return
-        
-            if not isinstance(binary_data, bytes):
-                print(f"[ERROR STUDENT OPEN] Binary data is not bytes, type: {type(binary_data)}")
-                messagebox.showerror("Error", "File data is corrupted")
-                return
-        
-            # Make sure filename is a string
-            if not isinstance(filename, str):
-                filename = str(filename) if filename else "download.bin"
-        
-            # Create temp file
-            import tempfile
-            with tempfile.NamedTemporaryFile(
-                delete=False, 
-                suffix=os.path.splitext(filename)[1] or '.bin',
-                prefix='download_'
-            ) as tmp:
-                tmp.write(binary_data)
-                temp_path = tmp.name
-        
-            print(f"[DEBUG STUDENT OPEN] Saved temp file: {temp_path}")
-        
-            # Open the file with default application
+
+            # Ensure filename
+            if not filename or not isinstance(filename, str):
+                filename = "download.bin"
+
+            # Create temp file and write data
+            suffix = os.path.splitext(filename)[1] or '.bin'
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix, prefix='download_')
             try:
-               if os.name == 'nt':  # Windows
-                    os.startfile(temp_path)
-                    message = f"✅ Opening file: {filename}"
-               elif sys.platform == 'darwin':  # macOS
-                    subprocess.run(['open', temp_path], check=True)
-                    message = f"✅ Opening file: {filename}"
-               else:  # Linux
-                    subprocess.run(['xdg-open', temp_path], check=True)
-                    message = f"✅ Opening file: {filename}"
-            
-               messagebox.showinfo(
-                    "Success", 
-                    f"{message}\n\n"
-                   f"📄 {filename}\n"
-                    f"📦 Size: {len(binary_data):,} bytes\n"
-                    f"📁 Temporary file: {temp_path}"
-                )
-            
-            except Exception as open_error:
-                print(f"[DEBUG STUDENT OPEN] Could not open directly: {open_error}")
-                messagebox.showinfo(
-                    "File Saved", 
-                    f"📄 {filename}\n"
-                    f"📦 Size: {len(binary_data):,} bytes\n"
-                    f"📁 Saved to temporary location:\n{temp_path}\n\n"
-                    f"Please open it manually from this location."
-                )
-        
+                tmp.write(binary_data)
+                tmp.flush()
+                tmp_path = tmp.name
+            finally:
+                tmp.close()
+
+            print(f"[DEBUG STUDENT OPEN] Temporary file created: {tmp_path}")
+
+            # Open the file using platform-appropriate method
+            try:
+                if sys.platform.startswith('win'):
+                    os.startfile(tmp_path)
+                elif sys.platform.startswith('darwin'):
+                    subprocess.Popen(['open', tmp_path])
+                else:
+                    subprocess.Popen(['xdg-open', tmp_path])
+            except Exception:
+                # If opening failed, inform user where file was saved
+                print(f"[DEBUG STUDENT OPEN] Could not open file automatically, saved to: {tmp_path}")
+                messagebox.showinfo("Saved", f"File saved to: {tmp_path}")
+
         except Exception as e:
             print(f"[ERROR STUDENT OPEN] Exception: {e}")
-            import traceback
             traceback.print_exc()
-            messagebox.showerror("Error", f"Cannot open file: {str(e)}")
-
-    def _refresh_current_class_view(self):
-        """Refresh all data for the currently selected class"""
-        if not self.selected_class:
-            return
+            try:
+                messagebox.showerror("Error", f"Cannot open file: {str(e)}")
+            except:
+                pass
+                            
     
         class_id = self.selected_class['_id']
         print(f"[DEBUG] Refreshing all data for class: {class_id}")

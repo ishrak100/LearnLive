@@ -1,7 +1,11 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
+import time
 from datetime import datetime
+
+# Module-level throttle to avoid rapid fetch bursts across multiple DiscussionGUI instances
+_last_any_load_time = 0.0
 
 class DiscussionGUI:
     def __init__(self, parent, client, class_id, class_name, user_email, message_callback):
@@ -27,6 +31,8 @@ class DiscussionGUI:
         self.pending_messages = {}  # local_id -> message_data
         self.local_message_counter = 0
         self.messages_cache = []  # Cache for server messages
+        self._loading_messages = False
+        self._last_load_time = 0.0
     
         # GUI setup
         self._setup_ui()
@@ -174,33 +180,105 @@ class DiscussionGUI:
         if msg_type == 'SUCCESS':
             if 'messages' in response:
                 # This is a response to fetch_messages
-                print(f"[DEBUG GUI] Got messages response: {len(response['messages'])} messages")
-                self.messages_cache = response['messages']
-                self.display_messages(response['messages'])
-                self.status_label.config(text=f"Loaded {len(response['messages'])} messages")
+                msgs = response.get('messages', [])
+                # Validate that these messages are for this DiscussionGUI's class.
+                target_id = response.get('_for_class_id')
+                if target_id is None and msgs:
+                    target_id = msgs[0].get('class_id')
+
+                if target_id != self.class_id:
+                    print(f"[DEBUG GUI] Ignoring fetched messages for class {target_id}; this view is {self.class_id}")
+                else:
+                    print(f"[DEBUG GUI] Got messages response: {len(msgs)} messages")
+                    self.messages_cache = msgs
+                    self.display_messages(msgs)
+                    try:
+                        self.status_label.config(text=f"Loaded {len(msgs)} messages")
+                    except Exception:
+                        pass
                 
             elif 'message' in response:
                 # This is a response to post_message
                 server_msg = response['message']
                 print(f"[DEBUG GUI] Message sent to server: {server_msg}")
-                
-                # Update any pending local message with server data
-                for local_id, local_msg in list(self.pending_messages.items()):
-                    if (local_msg['content'] == server_msg.get('content') and 
-                        local_msg['sent_by'] == server_msg.get('sent_by')):
-                        # Remove from pending
-                        del self.pending_messages[local_id]
-                        # Refresh to get server version
-                        self.load_messages()
-                        break
-                
+                # If server provided an attachment client_local_id, match pending
+                attached = server_msg.get('attachment') or {}
+                client_local_id = attached.get('client_local_id')
+
+                if client_local_id and client_local_id in self.pending_messages:
+                    # Remove pending and refresh
+                    try:
+                        del self.pending_messages[client_local_id]
+                    except KeyError:
+                        pass
+                    self.load_messages()
+                else:
+                    # Fallback matching by content/sender for normal text messages
+                    for local_id, local_msg in list(self.pending_messages.items()):
+                        if (local_msg.get('content') == server_msg.get('content') and 
+                            local_msg.get('sent_by') == server_msg.get('sent_by')):
+                            try:
+                                del self.pending_messages[local_id]
+                            except KeyError:
+                                pass
+                            self.load_messages()
+                            break
+
                 self.status_label.config(text="Message sent successfully")
     
         elif msg_type == 'MESSAGE':
             # Real-time broadcast message
             print(f"[DEBUG GUI] Real-time message received!")
             message_data = response.get('message', {})
+            # If the broadcasted message contains client_local_id, clear pending
+            attachment = message_data.get('attachment') or {}
+            client_local_id = attachment.get('client_local_id')
+            if client_local_id and client_local_id in self.pending_messages:
+                try:
+                    del self.pending_messages[client_local_id]
+                except KeyError:
+                    pass
             self.add_new_message(message_data)
+        
+        elif msg_type == 'FILE_DOWNLOAD_COMPLETE':
+            # Received binary file from server via client.download_file_binary
+            filename = response.get('filename')
+            binary = response.get('binary_data')
+            def _choose_and_save():
+                try:
+                    from tkinter import filedialog
+                    save_path = filedialog.asksaveasfilename(initialfile=filename)
+                    if not save_path:
+                        # user cancelled
+                        if self.parent and self.parent.winfo_exists():
+                            self.parent.after(0, lambda: self.status_label.config(text="Download canceled"))
+                        return
+
+                    # Write file in background thread to avoid blocking UI
+                    def _write_file():
+                        try:
+                            with open(save_path, 'wb') as f:
+                                f.write(binary)
+                            if self.parent and self.parent.winfo_exists():
+                                self.parent.after(0, lambda: self.status_label.config(text=f"Saved {filename}"))
+                        except Exception as e:
+                            print(f"[DISCUSSION GUI] Error writing file: {e}")
+                            if self.parent and self.parent.winfo_exists():
+                                self.parent.after(0, lambda: self.status_label.config(text=f"Error saving file: {e}"))
+
+                    import threading
+                    threading.Thread(target=_write_file, daemon=True).start()
+
+                except Exception as e:
+                    print(f"[DISCUSSION GUI] Error choosing save path: {e}")
+                    if self.parent and self.parent.winfo_exists():
+                        self.parent.after(0, lambda: self.status_label.config(text=f"Error saving file: {e}"))
+
+            # Ask for save path on main thread, then write in background
+            if self.parent and self.parent.winfo_exists():
+                self.parent.after(0, _choose_and_save)
+            else:
+                _choose_and_save()
             
         elif msg_type == 'ERROR':
             error_msg = response.get('error', 'Unknown error')
@@ -312,7 +390,7 @@ class DiscussionGUI:
                 # Fallback: try token or email
                 user_id = getattr(self.client, 'user_data', {}).get('email') or self.user_email
 
-            res = self.client.upload_attachment_gridfs(self.class_id, user_id, file_bytes, filename)
+            res = self.client.upload_attachment_gridfs(self.class_id, user_id, file_bytes, filename, client_local_id=local_id)
             print(f"[DISCUSSION GUI] upload_attachment_gridfs result: {res}")
 
             # Re-enable attach button
@@ -379,19 +457,39 @@ class DiscussionGUI:
     
     def load_messages(self):
         """Load messages from server in background thread"""
+        # Prevent concurrent loads for this instance
+        if self._loading_messages:
+            print(f"[DEBUG GUI] load_messages skipped; already loading for class: {self.class_id}")
+            return
+
+        # Global throttle: prevent rapid bursts across multiple instances
+        global _last_any_load_time
+        now = time.time()
+        if now - _last_any_load_time < 0.35:
+            print(f"[DEBUG GUI] load_messages throttled (global) for class: {self.class_id}")
+            return
+        _last_any_load_time = now
+
         def load_thread():
-            print(f"[DEBUG GUI] Loading messages for class: {self.class_id}")
-            if self.parent and self.parent.winfo_exists():
-                self.parent.after(0, lambda: self.status_label.config(text="Loading messages..."))
             try:
-                # This sends FETCH_MESSAGES request
-                success = self.client.fetch_messages(self.class_id, 50)
-                print(f"[DEBUG GUI] fetch_messages called, result: {success}")
-            except Exception as e:
-                print(f"[DEBUG GUI] Error loading messages: {str(e)}")
+                self._loading_messages = True
+                self._last_load_time = time.time()
+                print(f"[DEBUG GUI] Loading messages for class: {self.class_id}")
                 if self.parent and self.parent.winfo_exists():
-                    self.parent.after(0, lambda: self.status_label.config(text=f"Error: {str(e)}"))
-        
+                    self.parent.after(0, lambda: self.status_label.config(text="Loading messages..."))
+                try:
+                    # This sends FETCH_MESSAGES request
+                    success = self.client.fetch_messages(self.class_id, 50)
+                    print(f"[DEBUG GUI] fetch_messages called, result: {success}")
+                except Exception as e:
+                    print(f"[DEBUG GUI] Error loading messages: {str(e)}")
+                    if self.parent and self.parent.winfo_exists():
+                        self.parent.after(0, lambda: self.status_label.config(text=f"Error: {str(e)}"))
+            finally:
+                # Small delay to avoid immediate re-entrancy
+                time.sleep(0.05)
+                self._loading_messages = False
+
         # Run in thread to avoid blocking
         thread = threading.Thread(target=load_thread, daemon=True)
         thread.start()
@@ -473,12 +571,25 @@ class DiscussionGUI:
         timestamp = message.get('created_at', '')
         if timestamp:
             try:
+                # Parse ISO timestamp and convert to Bangladesh Time (UTC+6)
+                # Server stores UTC datetimes; treat naive as UTC.
+                from datetime import timezone, timedelta
+
                 if 'T' in timestamp:
-                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                    timestamp_str = dt.strftime("%I:%M %p")
+                    # Normalize Zulu designator
+                    iso = timestamp.replace('Z', '+00:00')
+                    dt = datetime.fromisoformat(iso)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
                 else:
-                    timestamp_str = timestamp
-            except:
+                    # Fallback: try parsing as naive and assume UTC
+                    dt = datetime.fromisoformat(timestamp)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+
+                bdt = dt.astimezone(timezone(timedelta(hours=6)))
+                timestamp_str = bdt.strftime("%I:%M %p")
+            except Exception:
                 timestamp_str = timestamp
         else:
             timestamp_str = ""
@@ -504,6 +615,27 @@ class DiscussionGUI:
             fg=status_color,
             font=("Arial", 9)
         )
+        # Attachment download button if present
+        attachment = message.get('attachment')
+        if attachment and isinstance(attachment, dict):
+            file_id = attachment.get('file_id') or attachment.get('fileId')
+            filename = attachment.get('filename', 'attachment')
+            def _download():
+                try:
+                    if file_id:
+                        self.client.download_file_binary(file_id)
+                    else:
+                        self.client.download_file(attachment.get('filepath') or attachment.get('path'), filename)
+                    if self.parent and self.parent.winfo_exists():
+                        self.parent.after(0, lambda: self.status_label.config(text=f"Downloading {filename}..."))
+                except Exception as e:
+                    print(f"[DISCUSSION GUI] Download error: {e}")
+                    if self.parent and self.parent.winfo_exists():
+                        self.parent.after(0, lambda: self.status_label.config(text=f"Download error: {e}"))
+
+            dl_btn = ttk.Button(status_frame, text="Download", bootstyle="info-outline", command=_download)
+            dl_btn.pack(side=tk.LEFT)
+
         status_label.pack(side=tk.RIGHT)
     
     def display_messages(self, messages):

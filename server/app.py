@@ -1137,6 +1137,11 @@ class LearnLiveServer:
                 'filename': filename,
             }
 
+            # Preserve client-local id if provided so client can match pending message
+            client_local_id = data.get('client_local_id')
+            if client_local_id:
+                attachment['client_local_id'] = client_local_id
+
             # Create discussion message referencing the uploaded file
             post_data = {
                 'content': data.get('content', ''),

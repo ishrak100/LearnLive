@@ -77,6 +77,113 @@ class LearnLiveClient:
         """
         self.message_callback = callback
     
+    # def _receive_messages(self):
+    #     """Background thread for receiving messages from server."""
+    #     while self.running and self.connected:
+    #         try:
+    #             # Receive message length (4 bytes)
+    #             length_data = b''
+    #             while len(length_data) < 4:
+    #                 chunk = self.socket.recv(4 - len(length_data))
+    #                 if not chunk:
+    #                     # Server closed connection
+    #                     self.connected = False
+    #                     if self.message_callback:
+    #                         self.message_callback({
+    #                             "type": "DISCONNECTED",
+    #                             "message": "Server closed connection"
+    #                         })
+    #                     return
+    #                 length_data += chunk
+                
+    #             message_length = int.from_bytes(length_data, byteorder='big')
+                
+    #             # Receive the full message
+    #             data = b''
+    #             while len(data) < message_length:
+    #                 chunk = self.socket.recv(min(BUFFER_SIZE, message_length - len(data)))
+    #                 if not chunk:
+    #                     # Server closed connection
+    #                     self.connected = False
+    #                     if self.message_callback:
+    #                         self.message_callback({
+    #                             "type": "DISCONNECTED",
+    #                             "message": "Server closed connection"
+    #                         })
+    #                     return
+    #                 data += chunk
+                
+    #             # Parse the complete JSON message
+    #             try:
+    #                 message = json.loads(data.decode())
+                    
+    #                 # DEBUG: Print received message
+    #                 print(f"📥 Client received: {message}")
+                    
+    #                 # NEW: Check if this is a file download response
+    #                 if (message.get('type') == 'SUCCESS' and 
+    #                     'size' in message and 
+    #                     'filename' in message and
+    #                     self.pending_download is not None):
+                        
+    #                     print(f"[CLIENT] File metadata received, expecting {message['size']} bytes")
+                        
+    #                     # Now read binary data directly from socket
+    #                     size = message.get('size', 0)
+    #                     if size > 0:
+    #                         binary_data = b""
+    #                         bytes_received = 0
+                            
+    #                         while bytes_received < size:
+    #                             remaining = size - bytes_received
+    #                             chunk = self.socket.recv(min(4096, remaining))
+    #                             if not chunk:
+    #                                 break
+    #                             binary_data += chunk
+    #                             bytes_received += len(chunk)
+                            
+    #                         print(f"[CLIENT] Received {len(binary_data)} bytes of binary data")
+                            
+    #                         # Create complete download response
+    #                         download_response = {
+    #                             "type": "FILE_DOWNLOAD_COMPLETE",
+    #                             "success": True,
+    #                             "filename": message.get('filename'),
+    #                             "binary_data": binary_data,
+    #                             "size": len(binary_data),
+    #                             "content_type": message.get('content_type'),
+    #                             "request_id": self.pending_download
+    #                         }
+                            
+    #                         # Reset pending download
+    #                         self.pending_download = None
+                            
+    #                         # Call callback with complete file
+    #                         if self.message_callback:
+    #                             self.message_callback(download_response)
+                            
+    #                         # Skip normal callback for metadata
+    #                         continue
+                    
+    #                 # Call callback if set
+    #                 if self.message_callback:
+    #                     self.message_callback(message)
+    #             except json.JSONDecodeError as e:
+    #                 print(f"JSON decode error: {e}")
+                    
+    #         except Exception as e:
+    #             if self.running:  # Only report if not intentional disconnect
+    #                 # Don't show connection errors for expected disconnections
+    #                 error_str = str(e).lower()
+    #                 if 'bad' not in error_str and 'connection' in error_str:
+    #                     if self.message_callback:
+    #                         self.message_callback({
+    #                             "type": "ERROR",
+    #                             "error": f"Connection error: {str(e)}"
+    #                         })
+    #             break
+
+
     def _receive_messages(self):
         """Background thread for receiving messages from server."""
         while self.running and self.connected:
@@ -98,7 +205,80 @@ class LearnLiveClient:
                 
                 message_length = int.from_bytes(length_data, byteorder='big')
                 
-                # Receive the full message
+                # IMPORTANT: Check if this is a binary response (already being handled)
+                # We need to ensure we don't try to parse binary data as JSON
+                
+                # If we're expecting a download, read binary data directly
+                if self.pending_download is not None:
+                    print(f"[CLIENT] Expecting download, reading {message_length} bytes")
+                    # This is the metadata response, read it as JSON
+                    data = b''
+                    while len(data) < message_length:
+                        chunk = self.socket.recv(min(BUFFER_SIZE, message_length - len(data)))
+                        if not chunk:
+                            break
+                        data += chunk
+                    
+                    if not data:
+                        self.pending_download = None
+                        continue
+                        
+                    try:
+                        metadata = json.loads(data.decode())
+                        
+                        # Check if this is indeed a download response
+                        if (metadata.get('type') == 'SUCCESS' and 
+                            'size' in metadata and 
+                            'filename' in metadata):
+                            
+                            print(f"[CLIENT] File metadata received, expecting {metadata['size']} bytes")
+                            
+                            # Now read binary data directly from socket
+                            size = metadata.get('size', 0)
+                            if size > 0:
+                                binary_data = b""
+                                bytes_received = 0
+                                
+                                while bytes_received < size:
+                                    remaining = size - bytes_received
+                                    chunk = self.socket.recv(min(4096, remaining))
+                                    if not chunk:
+                                        break
+                                    binary_data += chunk
+                                    bytes_received += len(chunk)
+                                
+                                print(f"[CLIENT] Received {len(binary_data)} bytes of binary data")
+                                
+                                # Create complete download response
+                                download_response = {
+                                    "type": "FILE_DOWNLOAD_COMPLETE",
+                                    "success": True,
+                                    "filename": metadata.get('filename'),
+                                    "binary_data": binary_data,
+                                    "size": len(binary_data),
+                                    "content_type": metadata.get('content_type'),
+                                    "request_id": self.pending_download
+                                }
+                                
+                                # Reset pending download
+                                self.pending_download = None
+                                
+                                # Call callback with complete file
+                                if self.message_callback:
+                                    self.message_callback(download_response)
+                                
+                                continue
+                            else:
+                                # No binary data, just forward the metadata
+                                if self.message_callback:
+                                    self.message_callback(metadata)
+                    except json.JSONDecodeError:
+                        # If it's not JSON, it might be raw binary for download
+                        print(f"[CLIENT] Received non-JSON data, treating as binary download")
+                        # Continue with normal processing for non-download messages
+                        pass
+                
+                # Normal message processing (not a download)
                 data = b''
                 while len(data) < message_length:
                     chunk = self.socket.recv(min(BUFFER_SIZE, message_length - len(data)))
@@ -120,57 +300,18 @@ class LearnLiveClient:
                     # DEBUG: Print received message
                     print(f"📥 Client received: {message}")
                     
-                    # NEW: Check if this is a file download response
-                    if (message.get('type') == 'SUCCESS' and 
-                        'size' in message and 
-                        'filename' in message and
-                        self.pending_download is not None):
-                        
-                        print(f"[CLIENT] File metadata received, expecting {message['size']} bytes")
-                        
-                        # Now read binary data directly from socket
-                        size = message.get('size', 0)
-                        if size > 0:
-                            binary_data = b""
-                            bytes_received = 0
-                            
-                            while bytes_received < size:
-                                remaining = size - bytes_received
-                                chunk = self.socket.recv(min(4096, remaining))
-                                if not chunk:
-                                    break
-                                binary_data += chunk
-                                bytes_received += len(chunk)
-                            
-                            print(f"[CLIENT] Received {len(binary_data)} bytes of binary data")
-                            
-                            # Create complete download response
-                            download_response = {
-                                "type": "FILE_DOWNLOAD_COMPLETE",
-                                "success": True,
-                                "filename": message.get('filename'),
-                                "binary_data": binary_data,
-                                "size": len(binary_data),
-                                "content_type": message.get('content_type'),
-                                "request_id": self.pending_download
-                            }
-                            
-                            # Reset pending download
-                            self.pending_download = None
-                            
-                            # Call callback with complete file
-                            if self.message_callback:
-                                self.message_callback(download_response)
-                            
-                            # Skip normal callback for metadata
-                            continue
-                    
                     # Call callback if set
                     if self.message_callback:
                         self.message_callback(message)
+                        
                 except json.JSONDecodeError as e:
                     print(f"JSON decode error: {e}")
-                    
+                    # If we get JSON decode error but have pending download,
+                    # it might be binary data we need to handle
+                    if self.pending_download is not None:
+                        print(f"[CLIENT] JSON decode error during pending download, resetting")
+                        self.pending_download = None
+                        
             except Exception as e:
                 if self.running:  # Only report if not intentional disconnect
                     # Don't show connection errors for expected disconnections
@@ -477,9 +618,49 @@ class LearnLiveClient:
             "user_id": user_id
         })
     
-    # REMOVED duplicate get_notifications method
-    
-    # NEW: Fixed download_file_binary method
+
+    # def download_file_binary(self, file_id):
+    #     """
+    #     Download a file from the server using the SAME socket connection.
+    #     The file will be delivered via the message callback as FILE_DOWNLOAD_COMPLETE.
+        
+    #     Returns:
+    #         dict: Initial response with request_id
+    #     """
+    #     try:
+    #         # Generate a unique request ID
+    #         request_id = str(uuid.uuid4())[:8]
+            
+    #         # Store that we're expecting a download
+    #         self.pending_download = request_id
+            
+    #         # Send the download request using the standard protocol
+    #         success = self.send_message("DOWNLOAD_FILE", {
+    #             "file_id": file_id,
+    #             "request_id": request_id
+    #         })
+            
+    #         if not success:
+    #             self.pending_download = None
+    #             return {
+    #                 'success': False, 
+    #                 'error': 'Failed to send download request'
+    #             }
+            
+    #         print(f"[CLIENT] Download request sent for file_id: {file_id}, request_id: {request_id}")
+            
+    #         return {
+    #             'success': True,
+    #             'message': 'Download request sent',
+    #             'request_id': request_id,
+    #             'status': 'pending'
+    #         }
+            
+    #     except Exception as e:
+    #         print(f"[CLIENT DOWNLOAD ERROR] {e}")
+    #         self.pending_download = None
+    #         return {'success': False, 'error': str(e)}
+
     def download_file_binary(self, file_id):
         """
         Download a file from the server using the SAME socket connection.
@@ -491,6 +672,11 @@ class LearnLiveClient:
         try:
             # Generate a unique request ID
             request_id = str(uuid.uuid4())[:8]
+            
+            # IMPORTANT: Clear any previous pending download
+            if self.pending_download is not None:
+                print(f"[CLIENT] Clearing previous pending download {self.pending_download}")
+                self.pending_download = None
             
             # Store that we're expecting a download
             self.pending_download = request_id
@@ -599,7 +785,7 @@ class LearnLiveClient:
             "limit": limit
         })
 
-    def upload_attachment_gridfs(self, class_id, user_id, file_content, filename=None):
+    def upload_attachment_gridfs(self, class_id, user_id, file_content, filename=None, client_local_id=None):
         """Upload an attachment to GridFS and create a discussion message referencing it.
 
         This uses the same binary protocol as material/assignment uploads: send metadata
@@ -616,6 +802,8 @@ class LearnLiveClient:
             "filename": filename,
             "file_size": len(file_content),
         }
+        if client_local_id:
+            data_payload['client_local_id'] = client_local_id
 
         send_success = self.send_message("UPLOAD_ATTACHMENT_GRIDFS", data_payload)
         if not send_success:
