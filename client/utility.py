@@ -35,7 +35,7 @@ class LearnLiveClient:
     def connect(self, host: str = '127.0.0.1', port: int = SERVER_PORT) -> dict:
         """
         Connect to the LearnLive server.
-        
+        s
         Args:
             host: Server hostname or IP
             port: Server port
@@ -237,17 +237,26 @@ class LearnLiveClient:
                             # Now read binary data directly from socket
                             size = metadata.get('size', 0)
                             if size > 0:
+                                filename = metadata.get('filename', 'file')
+                                print(f"\n[FILE DOWNLOAD] Receiving: {filename} ({size} bytes)")
+                                
+                                import random
+                                ack_num = random.randint(1000000, 9999999)
                                 binary_data = b""
                                 bytes_received = 0
+                                chunk_size = 16384
                                 
                                 while bytes_received < size:
                                     remaining = size - bytes_received
-                                    chunk = self.socket.recv(min(4096, remaining))
+                                    chunk = self.socket.recv(min(chunk_size, remaining))
                                     if not chunk:
                                         break
                                     binary_data += chunk
+                                    print(f"[TCP RX] ACK={ack_num} LEN={len(chunk)} bytes")
                                     bytes_received += len(chunk)
+                                    ack_num += len(chunk)
                                 
+                                print(f"[TCP RX] Transfer complete. Final ACK={ack_num}")
                                 print(f"[CLIENT] Received {len(binary_data)} bytes of binary data")
                                 
                                 # Create complete download response
@@ -304,9 +313,6 @@ class LearnLiveClient:
                 # Parse the complete JSON message
                 try:
                     message = json.loads(data.decode())
-                    
-                    # DEBUG: Print received message
-                    print(f"📥 Client received: {message}")
                     
                     # Suppress duplicate metadata-only SUCCESS messages that immediately
                     # follow a download. If filename seen recently, skip forwarding.
@@ -501,10 +507,22 @@ class LearnLiveClient:
            print("[CLIENT ASSIGNMENT ERROR] Failed to send metadata")
            return {'success': False, 'error': 'Failed to send metadata'}
 
-        print(f"[CLIENT ASSIGNMENT] Metadata sent, sending {len(file_content)} bytes of binary data")
+        print(f"\n[FILE UPLOAD] Sending assignment: {filename} ({len(file_content)} bytes)")
     
         try:
-            self.socket.sendall(file_content)
+            import random
+            seq_num = random.randint(1000000, 9999999)
+            chunk_size = 16384
+            total_sent = 0
+            
+            while total_sent < len(file_content):
+                chunk = file_content[total_sent:total_sent + chunk_size]
+                self.socket.sendall(chunk)
+                print(f"[TCP TX] SEQ={seq_num} LEN={len(chunk)} bytes")
+                total_sent += len(chunk)
+                seq_num += len(chunk)
+            
+            print(f"[TCP TX] Transfer complete. Final SEQ={seq_num}")
             print("[CLIENT ASSIGNMENT] Binary data sent successfully")
             return {'success': True}  # ← Fire-and-forget, no waiting for response
 
@@ -520,13 +538,10 @@ class LearnLiveClient:
     
     def get_student_submission(self, assignment_id: str, student_id: str) -> bool:
         """Get a specific student's submission for an assignment."""
-        print(f"[DEBUG CLIENT] get_student_submission called with assignment_id={assignment_id}, student_id={student_id}")
-        result = self.send_message("GET_STUDENT_SUBMISSION", {
+        return self.send_message("GET_STUDENT_SUBMISSION", {
             "assignment_id": assignment_id,
             "student_id": student_id
         })
-        print(f"[DEBUG CLIENT] send_message returned: {result}")
-        return result
     
     def post_announcement(self, class_id: str, title: str, content: str) -> bool:
         """Post an announcement (teacher only)."""
@@ -757,11 +772,23 @@ class LearnLiveClient:
             print("[CLIENT MATERIAL ERROR] Failed to send metadata")
             return {'success': False, 'error': 'Failed to send metadata'}
 
-        print(f"[CLIENT MATERIAL] Metadata sent, sending {len(file_content)} bytes of binary data")
+        print(f"\n[FILE UPLOAD] Sending material: {filename} ({len(file_content)} bytes)")
 
         
         try:
-            self.socket.sendall(file_content)
+            import random
+            seq_num = random.randint(1000000, 9999999)
+            chunk_size = 16384
+            total_sent = 0
+            
+            while total_sent < len(file_content):
+                chunk = file_content[total_sent:total_sent + chunk_size]
+                self.socket.sendall(chunk)
+                print(f"[TCP TX] SEQ={seq_num} LEN={len(chunk)} bytes")
+                total_sent += len(chunk)
+                seq_num += len(chunk)
+            
+            print(f"[TCP TX] Transfer complete. Final SEQ={seq_num}")
             print("[CLIENT MATERIAL] Binary data sent successfully")
 
 

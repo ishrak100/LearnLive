@@ -131,12 +131,11 @@ class StudentDashboard:
         ttk.Label(
             sidebar,
             text="Enrolled Classes",
-            font=("Arial", 11, "bold"),
-            bootstyle="inverse-secondary"
+            font=("Arial", 10, "bold"),
         ).pack(anchor=W, padx=20, pady=(10, 5))
         
-        self.classes_frame = ttk.Frame(sidebar, style="dark")
-        self.classes_frame.pack(fill=BOTH, expand=YES, padx=10)
+        self.classes_frame = ttk.Frame(sidebar, bootstyle="light")
+        self.classes_frame.pack(fill=BOTH, expand=YES, padx=0)
         
         # Logout button at bottom
         logout_frame = ttk.Frame(sidebar, style="dark")
@@ -161,31 +160,20 @@ class StudentDashboard:
             ttk.Label(
                 self.classes_frame,
                 text="No classes yet",
-                font=("Arial", 10),
-                bootstyle="inverse-secondary"
-            ).pack(pady=20)
+                font=("Arial", 9),
+            ).pack(pady=10)
             return
-        
-        canvas = Canvas(self.classes_frame, bg="#222", highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.classes_frame, orient=VERTICAL, command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas, style="dark")
-        
-        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=scrollable_frame, anchor=NW)
-        canvas.configure(yscrollcommand=scrollbar.set)
         
         filtered_classes = self._filter_classes()
         for cls in filtered_classes:
-            ttk.Button(
-                scrollable_frame,
-                text=f"📖  {cls.get('class_name', 'Unknown')}",
+            btn = ttk.Button(
+                self.classes_frame,
+                text=cls.get('class_name', 'Unknown'),
                 command=lambda c=cls: self._show_class_page(c),
-                bootstyle="dark",
-                width=45
-            ).pack(fill=X, pady=2, padx=5)
-        
-        canvas.pack(side=LEFT, fill=BOTH, expand=YES)
-        scrollbar.pack(side=RIGHT, fill=Y)
+                bootstyle="light",
+                width=25
+            )
+            btn.pack(fill=X, pady=2)
     
     def _create_header(self, parent):
         """Create header"""

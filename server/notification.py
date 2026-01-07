@@ -191,7 +191,7 @@ LearnLive Team
         
         # Batch save notifications to database (faster than individual saves)
         student_ids = class_data.get('students', [])
-        print(f"[DEBUG] Sending notifications to {len(student_ids)} students")
+
         
         # Save all notifications in batch (database operation)
         for student_id in student_ids:
@@ -441,7 +441,7 @@ LearnLive Team
                     # Send email notification
                     self.send_email(email, subject, body)
         
-        print(f"[DEBUG] Sending comment notifications to {len(recipient_ids)} recipients")
+
         
         # Save all notifications to database
         for recipient_id in recipient_ids:

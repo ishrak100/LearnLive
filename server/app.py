@@ -102,47 +102,13 @@ class LearnLiveServer:
                         return
                     data += chunk
                 
-                print(f"\n📨 TCP SEGMENT RECEIVED")
-                print(f"   From: {address[0]}:{address[1]}")
-                print(f"   Size: {len(data)} bytes")
-                print(f"   Protocol: TCP (Reliable, Ordered)")
-                
                 # Parse message
                 try:
                     message = json.loads(data.decode())
                     msg_type = message.get('type')
                     
-                    print(f"   Message Type: {msg_type}")
-                    
                     # Handle message based on type
                     response = self.process_message(message, client_socket, address)
-                    
-                    # DEBUG: Print response (excluding large file data)
-                    response_summary = response.copy()
-                    
-                    # Suppress file_data in direct response
-                    if 'file_data' in response_summary:
-                        response_summary['file_data'] = f"<{len(response['file_data'])} bytes>"
-                    
-                    # Suppress file_data in submission object
-                    if 'submission' in response_summary and isinstance(response_summary['submission'], dict):
-                        if 'file_data' in response_summary['submission']:
-                            response_summary['submission'] = response_summary['submission'].copy()
-                            response_summary['submission']['file_data'] = f"<{len(response['submission']['file_data'])} bytes>"
-                    
-                    # Suppress file_data in submissions array
-                    if 'submissions' in response_summary and isinstance(response_summary['submissions'], list):
-                        cleaned_submissions = []
-                        for sub in response_summary['submissions']:
-                            if isinstance(sub, dict) and 'file_data' in sub:
-                                cleaned_sub = sub.copy()
-                                cleaned_sub['file_data'] = f"<{len(sub['file_data'])} bytes>"
-                                cleaned_submissions.append(cleaned_sub)
-                            else:
-                                cleaned_submissions.append(sub)
-                        response_summary['submissions'] = cleaned_submissions
-                    
-                    print(f"   📤 Response: {response_summary}")
                     
                     # Track token for cleanup
                     if msg_type in [MSG_LOGIN, MSG_SIGNUP] and response.get('success'):
@@ -536,14 +502,23 @@ class LearnLiveServer:
 
         try:
             # --- receive binary (identical to material upload) ---
+            print(f"\n[FILE UPLOAD] Receiving assignment: {filename} ({expected_file_size} bytes)")
+            
+            import random
+            ack_num = random.randint(1000000, 9999999)
             file_content = b""
             bytes_received = 0
+            chunk_size = 16384
             while bytes_received < expected_file_size:
-                chunk = client_socket.recv(min(65536, expected_file_size - bytes_received))  # ← Use 64KB
+                chunk = client_socket.recv(min(chunk_size, expected_file_size - bytes_received))
                 if not chunk:
                     break
                 file_content += chunk
+                print(f"[TCP RX] ACK={ack_num} LEN={len(chunk)} bytes")
                 bytes_received += len(chunk)
+                ack_num += len(chunk)
+            
+            print(f"[TCP RX] Transfer complete. Final ACK={ack_num}")
 
             # --- store in DB ---
             result = self.db.submit_assignment_gridfs(
@@ -597,32 +572,16 @@ class LearnLiveServer:
         assignment_id = data.get('assignment_id')
         student_id = data.get('student_id')
         
-        print(f"[DEBUG SERVER] handle_get_student_submission called: assignment_id={assignment_id}, student_id={student_id}")
-        
         result = self.db.get_student_submission(assignment_id, student_id)
         
-        print(f"[DEBUG SERVER] Database result: {result}")
-        
         if result['success']:
-            response = {
+            return {
                 'type': RESP_SUCCESS,
                 'success': True,
                 'submission': result.get('submission')
             }
-            # DEBUG: Print response (excluding file_data)
-            if response.get('submission') and 'file_data' in response['submission']:
-                debug_response = response.copy()
-                debug_submission = debug_response['submission'].copy()
-                debug_submission['file_data'] = f"<{len(response['submission']['file_data'])} bytes>"
-                debug_response['submission'] = debug_submission
-                print(f"[DEBUG SERVER] Sending SUCCESS response: {debug_response}")
-            else:
-                print(f"[DEBUG SERVER] Sending SUCCESS response: {response}")
-            return response
         else:
-            response = {'type': RESP_ERROR, 'success': False, 'error': result['error']}
-            print(f"[DEBUG SERVER] Sending ERROR response: {response}")
-            return response
+            return {'type': RESP_ERROR, 'success': False, 'error': result['error']}
     
     def handle_post_announcement(self, data):
         """Handle post announcement request"""
@@ -800,9 +759,21 @@ class LearnLiveServer:
            client_socket.sendall(length_prefix + json_data)
         
            # Send binary data immediately after
-           print(f"[SERVER DOWNLOAD] Now sending {size} bytes of raw binary...")
-           client_socket.sendall(file_content)
-        
+           print(f"\n[FILE DOWNLOAD] Sending: {filename} ({size} bytes)")
+           
+           import random
+           seq_num = random.randint(1000000, 9999999)
+           chunk_size = 16384
+           total_sent = 0
+           
+           while total_sent < size:
+               chunk = file_content[total_sent:total_sent + chunk_size]
+               client_socket.sendall(chunk)
+               print(f"[TCP TX] SEQ={seq_num} LEN={len(chunk)} bytes")
+               total_sent += len(chunk)
+               seq_num += len(chunk)
+           
+           print(f"[TCP TX] Transfer complete. Final SEQ={seq_num}")
            print(f"[SERVER DOWNLOAD] File sent successfully")
         
            # FIX: Return a proper response, not None
@@ -1038,14 +1009,23 @@ class LearnLiveServer:
 
         try:
             # --- receive binary ---
+            print(f"\n[FILE UPLOAD] Receiving material: {filename} ({expected_file_size} bytes)")
+            
+            import random
+            ack_num = random.randint(1000000, 9999999)
             file_content = b""
             bytes_received = 0
+            chunk_size = 16384
             while bytes_received < expected_file_size:
-                chunk = client_socket.recv(min(65536, expected_file_size - bytes_received))
+                chunk = client_socket.recv(min(chunk_size, expected_file_size - bytes_received))
                 if not chunk:
                     break
                 file_content += chunk
+                print(f"[TCP RX] ACK={ack_num} LEN={len(chunk)} bytes")
                 bytes_received += len(chunk)
+                ack_num += len(chunk)
+            
+            print(f"[TCP RX] Transfer complete. Final ACK={ack_num}")
 
             # --- store in DB ---
             result = self.db.upload_material_gridfs(

@@ -87,12 +87,22 @@ class DiscussionGUI:
         )
         
         self.messages_frame = ttk.Frame(self.canvas)
+        
+        # Create window and bind it to expand with canvas width
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.messages_frame, anchor="nw")
+        
+        # Update scroll region when frame changes
         self.messages_frame.bind(
             "<Configure>",
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
         
-        self.canvas.create_window((0, 0), window=self.messages_frame, anchor="nw")
+        # Make messages_frame expand to canvas width
+        def _configure_frame_width(event):
+            canvas_width = event.width
+            self.canvas.itemconfig(self.canvas_window, width=canvas_width)
+        
+        self.canvas.bind("<Configure>", _configure_frame_width)
         self.canvas.configure(yscrollcommand=scrollbar.set)
         
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -528,7 +538,7 @@ class DiscussionGUI:
         """Display a single message in the messages frame"""
         # Create message frame
         msg_frame = ttk.Frame(self.messages_frame)
-        msg_frame.pack(fill=tk.X, padx=10, pady=5)
+        msg_frame.pack(fill=tk.X, padx=20, pady=10)
         
         # Configure colors based on sender
         is_me = message.get('sent_by') == self.user_email
@@ -542,11 +552,7 @@ class DiscussionGUI:
             relief=tk.RAISED,
             bd=1
         )
-        container.pack(
-            fill=tk.X, 
-            side=tk.RIGHT if is_me else tk.LEFT,
-            expand=True
-        )
+        container.pack(fill=tk.X, expand=True, padx=0, pady=0)
         
         # Sender label
         sender_text = "You" if is_me else message.get('sent_by', 'Unknown')
@@ -567,11 +573,10 @@ class DiscussionGUI:
             bg=bg_color,
             fg="white",
             font=("Arial", 11),
-            wraplength=400,
             justify=tk.LEFT,
             anchor="w"
         )
-        content_label.pack(fill=tk.X, padx=10, pady=(0, 5))
+        content_label.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 5))
         
         # Timestamp and status
         timestamp = message.get('created_at', '')
