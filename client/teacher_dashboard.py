@@ -3,6 +3,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from tkinter import dialog, messagebox, Canvas, simpledialog, Toplevel, Text, StringVar
 import os
+import time
 import sys
 import threading
 import queue
@@ -43,6 +44,8 @@ class TeacherDashboard:
         self.current_expand_view = None  # Track current expanded view for comments
         self.current_download_submission = None
         self.current_open_submission = None
+        self._last_download_ts = 0.0
+        self._last_download_name = None
         
         self.client.set_message_callback(self._handle_server_message)
     
@@ -283,6 +286,16 @@ class TeacherDashboard:
             "<Configure>",
             lambda e: canvas.itemconfig(window_id, width=e.width)
         )
+        # Pack canvas and scrollbar into the content frame so they are visible
+        canvas.pack(side=LEFT, fill=BOTH, expand=YES)
+        scrollbar.pack(side=RIGHT, fill=Y)
+
+        # Create submission cards inside the scrollable frame
+        for submission in submissions:
+            try:
+                self._create_submission_card(scrollable_frame, submission)
+            except Exception as e:
+                print(f"[DEBUG] Error creating submission card: {e}")
     
     def _create_submission_card(self, parent, submission):
         """Create a submission card"""
@@ -329,24 +342,34 @@ class TeacherDashboard:
         ).pack(side=RIGHT)
         
         # File info and download button
-        if submission.get('file_path'):
+        file_id = submission.get('file_id') or submission.get('file_id_str')
+        if file_id:
             file_frame = ttk.Frame(content, bootstyle="secondary")
             file_frame.pack(fill=X, pady=(10, 0))
-            
-            filename = os.path.basename(submission.get('file_path', ''))
+
+            filename = submission.get('filename') or os.path.basename(str(file_id))
             ttk.Label(
                 file_frame,
                 text=f"📎 {filename}",
                 font=("Arial", 11),
                 bootstyle="secondary"
             ).pack(side=LEFT)
-            
+
             ttk.Button(
                 file_frame,
                 text="⬇ Download",
                 command=lambda s=submission: self._download_submission(s),
                 bootstyle="success-outline",
-                width=15
+                width=12
+            ).pack(side=RIGHT, padx=(6,0))
+
+            # Open button: requests download but opens directly when received
+            ttk.Button(
+                file_frame,
+                text="📂 Open",
+                command=lambda s=submission: self._open_submission_request(s),
+                bootstyle="info-outline",
+                width=12
             ).pack(side=RIGHT)
         
         return card
@@ -360,40 +383,50 @@ class TeacherDashboard:
             return
     
         try:
-            # Use the new binary download method
+            # Request download; final save happens in FILE_DOWNLOAD_COMPLETE handler
             result = self.client.download_file_binary(file_id)
-        
+
             if result.get('success'):
-                binary_data = result.get('binary_data')
-                filename = result.get('filename', f"submission_{file_id[:8]}.bin")
-            
-                # Ask user where to save
-                from tkinter import filedialog
-                save_path = filedialog.asksaveasfilename(
-                    defaultextension="",
-                    initialfile=filename,
-                    filetypes=[("All Files", "*.*")]
-                )
-            
-                if save_path:
-                    # Write raw binary to file
-                    with open(save_path, 'wb') as f:
-                        f.write(binary_data)
-                
-                    messagebox.showinfo(
-                        "Success", 
-                        f"Submission downloaded!\n\n"
-                        f"File: {filename}\n"
-                        f"Size: {len(binary_data)} bytes\n"
-                        f"Saved to: {save_path}"
-                    )
-                else:
-                    messagebox.showinfo("Cancelled", "Download cancelled")
+                rid = result.get('request_id')
+                print(f"[DEBUG TEACHER] Download requested: file_id={file_id}, request_id={rid}")
+                # Inform user that download is in progress
+                try:
+                    if self.window and self.window.winfo_exists():
+                        self.window.after(0, lambda: messagebox.showinfo("Download", "Download started — you will be prompted to save when it arrives."))
+                except Exception:
+                    pass
             else:
-                messagebox.showerror("Error", f"Failed to download: {result.get('error')}")
-            
+                messagebox.showerror("Error", f"Failed to start download: {result.get('error')}")
+
         except Exception as e:
             messagebox.showerror("Error", f"Download error: {str(e)}")
+
+    def _open_submission_request(self, submission):
+        """Request download and open the submission when it arrives"""
+        file_id = submission.get('file_id')
+        if not file_id:
+            messagebox.showerror("Error", "No file attached to this submission")
+            return
+
+        try:
+            result = self.client.download_file_binary(file_id)
+            if result.get('success'):
+                rid = result.get('request_id')
+                # mark intent to open when the file arrives
+                try:
+                    setattr(self, f'want_to_open_{rid}', True)
+                except Exception:
+                    pass
+                print(f"[DEBUG TEACHER] Open requested: file_id={file_id}, request_id={rid}")
+                try:
+                    if self.window and self.window.winfo_exists():
+                        self.window.after(0, lambda: messagebox.showinfo("Open", "Opening file when download completes."))
+                except Exception:
+                    pass
+            else:
+                messagebox.showerror("Error", f"Failed to start download: {result.get('error')}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Open request error: {str(e)}")
 
     
     def _show_home_page(self):
@@ -1755,6 +1788,13 @@ class TeacherDashboard:
             # Clear binary data from message to save memory
             if 'binary_data' in message:
                 message['binary_data'] = b''
+
+            # Record timestamp and filename to suppress legacy file_content handlers
+            try:
+                self._last_download_ts = time.time()
+                self._last_download_name = filename
+            except Exception:
+                pass
     
             return
     
@@ -1780,10 +1820,24 @@ class TeacherDashboard:
     
         if msg_type == "SUCCESS":
             if "classes" in message:
+                # Update classes data then schedule UI update on main thread
                 self.classes = message["classes"]
-                self._update_sidebar_classes()
-                if self.current_view == "home":
-                    self._show_home_page()
+                def _refresh_classes_ui():
+                    try:
+                        self._update_sidebar_classes()
+                        if self.current_view == "home":
+                            self._show_home_page()
+                    except Exception as e:
+                        print(f"[DEBUG] Error refreshing classes UI: {e}")
+
+                if hasattr(self, 'window') and self.window:
+                    try:
+                        self.window.after(0, _refresh_classes_ui)
+                    except Exception:
+                        # Fallback to direct call if after fails for any reason
+                        _refresh_classes_ui()
+                else:
+                    _refresh_classes_ui()
             elif "announcement_id" in message:
                 # Handle POST_ANNOUNCEMENT response - clear cache and reload announcements
                 if self.selected_class:
@@ -1872,25 +1926,68 @@ class TeacherDashboard:
                 try:
                     msgs = message.get('messages', [])
                     if hasattr(self, 'discussion_gui') and self.discussion_gui:
-                        if hasattr(self, 'window') and self.window:
-                            self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+                        # Only schedule the callback if the discussion GUI still has its messages_frame
+                        try:
+                            has_frame = (hasattr(self.discussion_gui, 'messages_frame') and
+                                         self.discussion_gui.messages_frame and
+                                         self.discussion_gui.messages_frame.winfo_exists())
+                        except Exception:
+                            has_frame = False
+
+                        if has_frame:
+                            if hasattr(self, 'window') and self.window:
+                                self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+                            else:
+                                self.discussion_gui.handle_server_message(message)
                         else:
-                            self.discussion_gui.handle_server_message(message)
+                            print("[DEBUG TEACHER] discussion_gui messages_frame missing; skipping fetched messages scheduling")
                     else:
                         print("[DEBUG TEACHER] No discussion_gui to handle fetched messages")
                 except Exception as e:
                     print(f"[DEBUG TEACHER] Error scheduling fetched messages: {e}")
 
             elif 'message' in message:
-                # Single-message SUCCESS response (e.g., POST_MESSAGE) - forward to DiscussionGUI
+                # Single-message SUCCESS response (e.g., POST_MESSAGE)
                 try:
+                    handled = False
+
+                    # If this is a 'Class created' confirmation, refresh classes immediately
+                    msg_text = str(message.get('message', ''))
+                    if msg_text.startswith("Class created"):
+                        try:
+                            # Request fresh classes list and schedule a success popup
+                            self.client.view_classes()
+                            if hasattr(self, 'window') and self.window:
+                                self.window.after(100, lambda: messagebox.showinfo("Success", msg_text))
+                            else:
+                                messagebox.showinfo("Success", msg_text)
+                        except Exception as e:
+                            print(f"[DEBUG] Error handling Class created message: {e}")
+                        handled = True
+
+                    # Forward to DiscussionGUI if present and applicable
                     if hasattr(self, 'discussion_gui') and self.discussion_gui:
-                        if hasattr(self, 'window') and self.window:
-                            self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+                        # Only schedule if discussion GUI message area still exists
+                        try:
+                            has_frame = (hasattr(self.discussion_gui, 'messages_frame') and
+                                         self.discussion_gui.messages_frame and
+                                         self.discussion_gui.messages_frame.winfo_exists())
+                        except Exception:
+                            has_frame = False
+
+                        if has_frame:
+                            if hasattr(self, 'window') and self.window:
+                                self.window.after(0, lambda m=message: self.discussion_gui.handle_server_message(m))
+                            else:
+                                self.discussion_gui.handle_server_message(message)
+                            handled = True
                         else:
-                            self.discussion_gui.handle_server_message(message)
-                    else:
+                            print("[DEBUG TEACHER] discussion_gui messages_frame missing; skipping single message scheduling")
+
+                    if not handled:
+                        # Nothing to forward; log for debugging
                         print("[DEBUG TEACHER] No discussion_gui to handle single-message response")
+
                 except Exception as e:
                     print(f"[DEBUG TEACHER] Error scheduling single message response: {e}")
             elif "materials" in message:
@@ -1908,6 +2005,16 @@ class TeacherDashboard:
                         print(f"[DEBUG] Error displaying materials: {e}")
             elif "file_content" in message:
                 # Handle DOWNLOAD_FILE response
+                # Suppress if we just handled a FILE_DOWNLOAD_COMPLETE to avoid duplicate dialogs
+                try:
+                    if time.time() - getattr(self, '_last_download_ts', 0) < 6.0:
+                        # If filename matches recent download, suppress duplicate dialog
+                        recent_name = getattr(self, '_last_download_name', None)
+                        if recent_name and recent_name == message.get('filename'):
+                            print("[DEBUG TEACHER] Suppressing legacy file_content handler due to recent FILE_DOWNLOAD_COMPLETE for same filename")
+                            return
+                except Exception:
+                    pass
                 print(f"[DEBUG TEACHER] Received file download response")
         
                 import base64
@@ -1980,6 +2087,15 @@ class TeacherDashboard:
                     print(f"[DEBUG] No active submissions dialog or To-Get page")
             elif "file_data" in message:
                 # Handle DOWNLOAD_FILE response
+                # Suppress if we just handled a FILE_DOWNLOAD_COMPLETE to avoid duplicate dialogs
+                try:
+                    if time.time() - getattr(self, '_last_download_ts', 0) < 6.0:
+                        recent_name = getattr(self, '_last_download_name', None)
+                        if recent_name and recent_name == (self.pending_download.get('filename') if hasattr(self, 'pending_download') and self.pending_download else None):
+                            print("[DEBUG TEACHER] Suppressing legacy file_data handler due to recent FILE_DOWNLOAD_COMPLETE for same filename")
+                            return
+                except Exception:
+                    pass
                 if hasattr(self, 'pending_download'):
                     file_data = message.get('file_data')
                     save_path = self.pending_download.get('save_path')
@@ -1997,6 +2113,15 @@ class TeacherDashboard:
 
             elif "file_content" in message:
                 # Handle DOWNLOAD_FILE response
+                # Suppress if we just handled a FILE_DOWNLOAD_COMPLETE to avoid duplicate dialogs
+                try:
+                    if time.time() - getattr(self, '_last_download_ts', 0) < 6.0:
+                        recent_name = getattr(self, '_last_download_name', None)
+                        if recent_name and recent_name == message.get('filename'):
+                            print("[DEBUG TEACHER] Suppressing legacy file_content (hex) handler due to recent FILE_DOWNLOAD_COMPLETE for same filename")
+                            return
+                except Exception:
+                    pass
                 print(f"[DEBUG TEACHER] Received file download response")
         
                 import binascii  # For hex decoding
@@ -2176,20 +2301,24 @@ class TeacherDashboard:
     def _logout(self):
         """Handle logout"""
         if messagebox.askokcancel("Log Out", "Are you sure you want to log out?"):
+            # Disconnect client
             self.client.disconnect()
+            
+            # Destroy current dashboard window
             self.window.destroy()
             
-            # Show login screen again
+            # Import required modules
             from client.login_gui import LoginWindow
             from client.utility import LearnLiveClient
             
-            # Create new client and login window
+            # Create new client instance
             new_client = LearnLiveClient()
             
             def on_login_success(user_data: dict):
                 """Handle successful login after logout"""
                 role = user_data.get("role", "student")
                 if role == "teacher":
+                    from client.teacher_dashboard import TeacherDashboard
                     dashboard = TeacherDashboard(new_client, user_data)
                     dashboard.show()
                 else:
@@ -2197,8 +2326,9 @@ class TeacherDashboard:
                     dashboard = StudentDashboard(new_client, user_data)
                     dashboard.show()
             
-            login = LoginWindow(new_client, on_login_success)
-            login.show()
+            # Create and show new login window
+            login_window = LoginWindow(new_client, on_login_success)
+            login_window.show()
     
     def _show_submissions_dialog(self, assignment_id, assignment_title):
         """Show dialog with all student submissions for an assignment"""
@@ -2507,14 +2637,31 @@ class TeacherDashboard:
                     f.write(binary_data)
             
                 print(f"[DEBUG TEACHER SAVE] File saved successfully: {save_path}")
-            
-                messagebox.showinfo(
-                    "Success", 
+                # Offer to open the file now
+                message = (
                     f"✅ File saved successfully!\n\n"
                     f"📄 {filename}\n"
                     f"📦 Size: {len(binary_data):,} bytes\n"
                     f"📁 Location: {save_path}"
                 )
+                # Show info then ask to open
+                messagebox.showinfo("Success", message)
+                try:
+                    open_now = messagebox.askyesno("Open file?", "Open the file now?")
+                    if open_now:
+                        try:
+                            if os.name == 'nt':
+                                os.startfile(save_path)
+                            elif sys.platform == 'darwin':
+                                subprocess.run(['open', save_path], check=True)
+                            else:
+                                subprocess.run(['xdg-open', save_path], check=True)
+                        except Exception as open_err:
+                            print(f"[DEBUG TEACHER SAVE] Could not open saved file: {open_err}")
+                            messagebox.showinfo("Saved", f"File saved to {save_path}. Open it manually if needed.")
+                except Exception:
+                    # If the ask dialog fails for any reason, just return silently
+                    pass
             else:
                 print(f"[DEBUG TEACHER SAVE] User cancelled save")
                 messagebox.showinfo("Cancelled", "Download cancelled")

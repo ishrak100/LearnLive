@@ -98,11 +98,17 @@ class DiscussionGUI:
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Bind mouse wheel for scrolling
+        # Bind mouse wheel for scrolling (guard against widget destruction)
         def _on_mousewheel(event):
-            self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            try:
+                if hasattr(self, 'canvas') and self.canvas.winfo_exists():
+                    self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except tk.TclError:
+                # Canvas was destroyed or invalid; ignore further mousewheel events
+                return
+
+        # Bind to the canvas (avoids global bind_all which may call handler after destroy)
+        self.canvas.bind("<MouseWheel>", _on_mousewheel)
         
         # Message input area
         input_frame = ttk.Frame(self.main_frame)

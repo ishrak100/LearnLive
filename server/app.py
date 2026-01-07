@@ -905,7 +905,10 @@ class LearnLiveServer:
         if data['user_role'] != 'teacher':
             return {'type': RESP_ERROR, 'error': 'Only teachers can view all submissions'}
         
+        # Debug: log request data
+        print(f"[SERVER] handle_get_teacher_submissions called with data keys: {list(data.keys())}")
         teacher_id = data['user_id']
+        print(f"[SERVER] teacher_id={teacher_id}")
         result = self.db.get_teacher_submissions(teacher_id)
         
         if result['success']:

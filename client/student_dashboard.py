@@ -2686,14 +2686,17 @@ class StudentDashboard:
     def _logout(self):
         """Handle logout"""
         if messagebox.askokcancel("Log Out", "Are you sure you want to log out?"):
+            # Disconnect client
             self.client.disconnect()
+            
+            # Destroy current dashboard window
             self.window.destroy()
             
-            # Show login screen again
+            # Import required modules
             from client.login_gui import LoginWindow
             from client.utility import LearnLiveClient
             
-            # Create new client and login window
+            # Create new client instance
             new_client = LearnLiveClient()
             
             def on_login_success(user_data: dict):
@@ -2704,11 +2707,13 @@ class StudentDashboard:
                     dashboard = TeacherDashboard(new_client, user_data)
                     dashboard.show()
                 else:
+                    from client.student_dashboard import StudentDashboard
                     dashboard = StudentDashboard(new_client, user_data)
                     dashboard.show()
             
-            login = LoginWindow(new_client, on_login_success)
-            login.show()
+            # Create and show new login window
+            login_window = LoginWindow(new_client, on_login_success)
+            login_window.show()
     
     def _on_closing(self):
         """Handle closing"""

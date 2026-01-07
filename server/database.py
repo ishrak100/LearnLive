@@ -522,16 +522,37 @@ class Database:
         try:
             from bson.objectid import ObjectId
             
+            # Debug: log input
+            print(f"[DATABASE] get_teacher_submissions called for teacher_id={teacher_id}")
+
             # Get all classes taught by this teacher
             teacher_classes = list(self.classes.find({'teacher_id': teacher_id}))
+            print(f"[DATABASE] Found {len(teacher_classes)} classes for teacher")
             class_ids = [cls['_id'] for cls in teacher_classes]
             
             # Get all assignments for these classes
-            assignments = list(self.assignments.find({'class_id': {'$in': [str(cid) for cid in class_ids]}}))
+            class_id_strs = [str(cid) for cid in class_ids]
+            print(f"[DATABASE] class_id_strs={class_id_strs}")
+            assignments = list(self.assignments.find({'class_id': {'$in': class_id_strs}}))
+            print(f"[DATABASE] Found {len(assignments)} assignments for those classes")
             assignment_ids = [str(assgn['_id']) for assgn in assignments]
             
             # Get all submissions for these assignments
+            print(f"[DATABASE] assignment_ids={assignment_ids}")
             submissions = list(self.submissions.find({'assignment_id': {'$in': assignment_ids}}))
+            print(f"[DATABASE] Found {len(submissions)} submissions for those assignments (string match)")
+
+            # If none found, try matching assignment_id as ObjectId values (some submissions may store ObjectId)
+            if len(submissions) == 0:
+                obj_ids = []
+                for aid in assignment_ids:
+                    try:
+                        obj_ids.append(ObjectId(aid))
+                    except Exception:
+                        pass
+                if obj_ids:
+                    submissions = list(self.submissions.find({'assignment_id': {'$in': obj_ids}}))
+                    print(f"[DATABASE] Found {len(submissions)} submissions for those assignments (ObjectId match)")
             
             # Enrich with student, assignment, and class info
             for s in submissions:
@@ -542,8 +563,12 @@ class Database:
                 if user:
                     s['student_name'] = user['name']
                 
-                # Get assignment title
-                assignment = next((a for a in assignments if str(a['_id']) == s['assignment_id']), None)
+                # Get assignment title (handle s['assignment_id'] being ObjectId or string)
+                try:
+                    aid_str = str(s.get('assignment_id'))
+                except Exception:
+                    aid_str = None
+                assignment = next((a for a in assignments if str(a['_id']) == aid_str), None)
                 if assignment:
                     s['assignment_title'] = assignment['title']
                     
@@ -554,7 +579,19 @@ class Database:
                 
                 # Format date
                 if 'submitted_at' in s:
-                    s['submitted_at'] = s['submitted_at'].strftime('%Y-%m-%d %H:%M')
+                    # If it's a datetime, format; if already string, keep
+                    try:
+                        s['submitted_at'] = s['submitted_at'].strftime('%Y-%m-%d %H:%M')
+                    except Exception:
+                        s['submitted_at'] = str(s['submitted_at'])
+
+                # Normalize common ObjectId fields to strings for JSON serialization
+                for _key in ('assignment_id', 'student_id', 'file_id', 'class_id'):
+                    if _key in s and not isinstance(s[_key], str):
+                        try:
+                            s[_key] = str(s[_key])
+                        except Exception:
+                            pass
             
             # Sort by submission date (newest first)
             submissions.sort(key=lambda x: x.get('submitted_at', ''), reverse=True)

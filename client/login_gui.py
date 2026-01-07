@@ -1,3 +1,4 @@
+import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import os
@@ -24,12 +25,12 @@ class LoginWindow:
     def show(self):
         self.window = ttk.Window(themename="darkly")
         self.window.title("LearnLive")
-        self.window.geometry("1000x720")
+        self.window.geometry("1000x800")
         self.window.resizable(False, False)
 
         # Center window
         self.window.update_idletasks()
-        w, h = 1000, 720
+        w, h = 1000, 800
         x = (self.window.winfo_screenwidth() - w) // 2
         y = (self.window.winfo_screenheight() - h) // 2
         self.window.geometry(f"{w}x{h}+{x}+{y}")
@@ -48,35 +49,35 @@ class LoginWindow:
 
         # ---------------- HEADER ----------------
         header = ttk.Frame(root, bootstyle="dark")
-        header.pack(pady=(10, 35))
+        header.pack(pady=(5, 25))
 
         ttk.Label(
             header,
             text="🎓",
-            font=("Segoe UI Emoji", 54),
+            font=("Segoe UI Emoji", 48),
             bootstyle="inverse-light",
         ).pack()
 
         ttk.Label(
             header,
             text="LearnLive",
-            font=("Segoe UI", 32, "bold"),
+            font=("Segoe UI", 28, "bold"),
             bootstyle="inverse-light",
-        ).pack(pady=(6, 2))
+        ).pack(pady=(4, 2))
 
         ttk.Label(
             header,
             text="Smart Classroom Management System",
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 11),
             bootstyle="inverse-secondary",
         ).pack()
 
-        ttk.Separator(root, bootstyle="secondary").pack(fill=X, pady=(0, 30))
+        ttk.Separator(root, bootstyle="secondary").pack(fill=X, pady=(0, 25))
 
         # ---------------- CARD ----------------
         card = ttk.Frame(
             root,
-            padding=35,
+            padding=30,
             bootstyle="dark",
             relief="solid",
             borderwidth=1,
@@ -99,11 +100,13 @@ class LoginWindow:
 
     def _build_login_form(self):
         self._clear_form()
+        self.is_login_mode = True
 
         self._field_label("Email")
         self.email_entry = self._entry()
+        self.email_entry.focus()
 
-        self._field_label("Password", top_pad=18)
+        self._field_label("Password", top_pad=14)
         self.password_entry = self._entry(show="•")
 
         self.login_btn = ttk.Button(
@@ -113,7 +116,7 @@ class LoginWindow:
             bootstyle="primary",
             width=28,
         )
-        self.login_btn.pack(pady=(30, 20))
+        self.login_btn.pack(pady=(25, 18))
 
         self._switch_row(
             "Don't have an account?",
@@ -125,21 +128,24 @@ class LoginWindow:
 
     def _build_signup_form(self):
         self._clear_form()
+        self.is_login_mode = False
 
         self._field_label("Full Name")
         self.name_entry = self._entry()
+        self.name_entry.focus()
 
-        self._field_label("Email", top_pad=12)
+        self._field_label("Email", top_pad=10)
         self.email_entry = self._entry()
 
-        self._field_label("Password", top_pad=12)
+        self._field_label("Password", top_pad=10)
         self.password_entry = self._entry(show="•")
 
-        self._field_label("I am a:", top_pad=18)
-        self.role_var = ttk.StringVar(value="student")
+        self._field_label("I am a:", top_pad=12)
+        
+        self.role_var = tk.StringVar(value="student")
 
         role_frame = ttk.Frame(self.form_frame, bootstyle="dark")
-        role_frame.pack(fill=X, pady=(5, 20))
+        role_frame.pack(fill=X, pady=(5, 15))
 
         ttk.Radiobutton(
             role_frame,
@@ -164,7 +170,7 @@ class LoginWindow:
             bootstyle="success",
             width=28,
         )
-        self.signup_btn.pack(pady=(10, 18))
+        self.signup_btn.pack(pady=(10, 14))
 
         self._switch_row(
             "Already have an account?",
@@ -197,7 +203,7 @@ class LoginWindow:
 
     def _switch_row(self, left_text, btn_text, command):
         frame = ttk.Frame(self.form_frame, bootstyle="dark")
-        frame.pack(pady=10)
+        frame.pack(pady=8)
 
         ttk.Label(
             frame,
@@ -222,7 +228,7 @@ class LoginWindow:
             wraplength=420,
             justify=CENTER,
         )
-        lbl.pack(pady=12)
+        lbl.pack(pady=10)
         return lbl
 
     # ================= MODE SWITCH =================

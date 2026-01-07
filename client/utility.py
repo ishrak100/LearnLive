@@ -30,6 +30,7 @@ class LearnLiveClient:
         self.message_callback = None
         self.server_address = (SERVER_HOST, SERVER_PORT)
         self.pending_download = None  # NEW: Track pending download
+        self._recent_downloads = {}  # filename -> timestamp to suppress duplicate metadata dialogs
         
     def connect(self, host: str = '127.0.0.1', port: int = SERVER_PORT) -> dict:
         """
@@ -262,16 +263,23 @@ class LearnLiveClient:
                                 
                                 # Reset pending download
                                 self.pending_download = None
-                                
+
+                                # Record recent download to avoid duplicate metadata dialogs
+                                try:
+                                    self._recent_downloads[metadata.get('filename')] = time.time()
+                                except Exception:
+                                    pass
+
                                 # Call callback with complete file
                                 if self.message_callback:
                                     self.message_callback(download_response)
-                                
+
                                 continue
                             else:
-                                # No binary data, just forward the metadata
-                                if self.message_callback:
-                                    self.message_callback(metadata)
+                                # No binary data: treat as a metadata-only response for download
+                                # Do NOT forward this metadata to avoid duplicate dialogs; caller
+                                # who initiated the download will receive FILE_DOWNLOAD_COMPLETE.
+                                continue
                     except json.JSONDecodeError:
                         # If it's not JSON, it might be raw binary for download
                         print(f"[CLIENT] Received non-JSON data, treating as binary download")
@@ -300,6 +308,21 @@ class LearnLiveClient:
                     # DEBUG: Print received message
                     print(f"📥 Client received: {message}")
                     
+                    # Suppress duplicate metadata-only SUCCESS messages that immediately
+                    # follow a download. If filename seen recently, skip forwarding.
+                    if (message.get('type') == 'SUCCESS' and
+                        'filename' in message and
+                        message.get('filename') in self._recent_downloads):
+                        ts = self._recent_downloads.get(message.get('filename'))
+                        if ts and time.time() - ts < 3.0:
+                            print(f"[CLIENT] Suppressing duplicate metadata for {message.get('filename')}")
+                            # remove entry to avoid suppressing future unrelated messages
+                            try:
+                                del self._recent_downloads[message.get('filename')]
+                            except Exception:
+                                pass
+                            continue
+
                     # Call callback if set
                     if self.message_callback:
                         self.message_callback(message)
@@ -673,14 +696,14 @@ class LearnLiveClient:
             # Generate a unique request ID
             request_id = str(uuid.uuid4())[:8]
             
-            # IMPORTANT: Clear any previous pending download
+            # Prevent concurrent downloads: require previous to finish first
             if self.pending_download is not None:
-                print(f"[CLIENT] Clearing previous pending download {self.pending_download}")
-                self.pending_download = None
-            
+                print(f"[CLIENT] Download already in progress: {self.pending_download}")
+                return {'success': False, 'error': 'Another download is currently in progress'}
+
             # Store that we're expecting a download
             self.pending_download = request_id
-            
+
             # Send the download request using the standard protocol
             success = self.send_message("DOWNLOAD_FILE", {
                 "file_id": file_id,
@@ -753,7 +776,6 @@ class LearnLiveClient:
     def post_message(self, content, class_id):
         """Send a discussion message - NON-BLOCKING VERSION"""
         print(f"[DEBUG CLIENT] post_message called: content={content}, class_id={class_id}")
-    
         # Get user email from user_data
         sent_by = ""
         if hasattr(self, 'user_data') and self.user_data:
@@ -763,21 +785,21 @@ class LearnLiveClient:
         else:
             print(f"[DEBUG CLIENT] Warning: No user email found!")
             sent_by = "unknown"
-    
+
         data = {
             "content": content,
             "class_id": class_id,
             "sent_by": sent_by,  # Use email instead of user_id
         }
-    
+
         print(f"[DEBUG CLIENT] Sending POST_MESSAGE with data: {data}")
-    
+
         # Use send_message (which is already non-blocking) instead of send_message_to_server
         result = self.send_message("POST_MESSAGE", data)
         print(f"[DEBUG CLIENT] send_message returned: {result}")
-    
+
         return result
-    
+
     def fetch_messages(self, class_id: str, limit: int = 100) -> bool:
         """Fetch discussion messages for a class."""
         return self.send_message("FETCH_MESSAGES", {
